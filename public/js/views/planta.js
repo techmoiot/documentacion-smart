@@ -68,30 +68,57 @@ export async function plantaView(root, query = {}) {
         line.addTo(G.cables);
       } else if (e.lat != null && e.lng != null && e.own_lat != null) {
         count.els++;
-        const m = L.marker([e.lat, e.lng], { icon: elIcon(e, selected?.type === 'el' && selected.id === e.id), title: e.name, draggable: editable && tool === 'select' });
+        const m = L.marker([e.lat, e.lng], { icon: elIcon(e, selected?.type === 'el' && selected.id === e.id), title: e.name, draggable: editable && tool === 'move' });
         m.bindTooltip(`${FIBER_KIND[e.kind]?.label || e.kind}: ${e.name}`);
-        m.on('click', (ev) => { L.DomEvent.stopPropagation(ev); if (tool === 'cable') addVertex(e.lat, e.lng, null); else if (tool === 'select') selectEl(e.id); });
-        m.on('dragend', async () => {
-          const ll = m.getLatLng();
-          await guard(() => api.patch(`/api/fiber/${e.id}`, { lat: ll.lat, lng: ll.lng }));
-          toast('Posición actualizada'); reload();
-        });
+        m.on('click', (ev) => { L.DomEvent.stopPropagation(ev); if (tool === 'cable') addVertex(e.lat, e.lng, null); else if (tool === 'select' || tool === 'move') selectEl(e.id); });
+        m.on('dragend', () => { const ll = m.getLatLng(); moveItem({ type: 'el', id: e.id, name: e.name, from: [e.lat, e.lng], to: [ll.lat, ll.lng] }); });
         m.addTo(G.els);
       }
     }
     for (const p of data.poles) {
-      const m = L.marker([p.lat, p.lng], { icon: poleIcon(p, selected?.type === 'pole' && selected.id === p.id), title: p.code, draggable: editable && tool === 'select', zIndexOffset: -100 });
+      const m = L.marker([p.lat, p.lng], { icon: poleIcon(p, selected?.type === 'pole' && selected.id === p.id), title: p.code, draggable: editable && tool === 'move', zIndexOffset: -100 });
       m.bindTooltip(`Poste ${p.code}${p.name ? ' · ' + p.name : ''}`);
-      m.on('click', (ev) => { L.DomEvent.stopPropagation(ev); if (tool === 'cable') addVertex(p.lat, p.lng, p.id); else if (tool === 'select') selectPole(p.id); });
-      m.on('dragend', async () => {
-        const ll = m.getLatLng();
-        await guard(() => api.patch(`/api/poles/${p.id}`, { lat: ll.lat, lng: ll.lng }));
-        toast('Poste reubicado; los cables que pasan por él lo siguen'); reload();
-      });
+      m.on('click', (ev) => { L.DomEvent.stopPropagation(ev); if (tool === 'cable') addVertex(p.lat, p.lng, p.id); else if (tool === 'select' || tool === 'move') selectPole(p.id); });
+      m.on('dragend', () => { const ll = m.getLatLng(); moveItem({ type: 'pole', id: p.id, name: `poste ${p.code}`, from: [p.lat, p.lng], to: [ll.lat, ll.lng] }); });
       m.addTo(G.poles);
     }
     stats.textContent = `${count.poles} postes · ${count.cables} cables · ${count.els} cajas/clientes`;
     drawDraft();
+  }
+
+  // ---------- Deshacer / rehacer (movimientos y trazados) ----------
+  const undoStack = [], redoStack = [];
+  const undoBtn = btn('Deshacer', { ic: 'undo', title: 'Deshacer el último cambio (Ctrl+Z)', onClick: () => undo() });
+  const redoBtn = btn('Rehacer', { ic: 'redo', title: 'Rehacer (Ctrl+Y)', onClick: () => redo() });
+  function undoUI() {
+    undoBtn.disabled = !undoStack.length; redoBtn.disabled = !redoStack.length;
+    undoBtn.title = undoStack.length ? `Deshacer: ${undoStack[undoStack.length - 1].label} (Ctrl+Z)` : 'Nada que deshacer';
+    redoBtn.title = redoStack.length ? `Rehacer: ${redoStack[redoStack.length - 1].label} (Ctrl+Y)` : 'Nada que rehacer';
+  }
+  async function applyChange(it, dir) {
+    const v = dir === 'undo' ? it.from : it.to;
+    if (it.type === 'path') {
+      const cur = elById().get(it.id);
+      const props = { ...(cur?.props || {}), longitud_m: Math.round(pathLen(v)) };
+      return guard(() => api.patch(`/api/fiber/${it.id}`, { path: v, props }));
+    }
+    return guard(() => api.patch(it.type === 'pole' ? `/api/poles/${it.id}` : `/api/fiber/${it.id}`, { lat: v[0], lng: v[1] }));
+  }
+  async function moveItem(it) {
+    if (Math.abs(it.from[0] - it.to[0]) < 1e-9 && Math.abs(it.from[1] - it.to[1]) < 1e-9) return;
+    it.label = `mover ${it.name}`;
+    if (await applyChange(it, 'redo')) { undoStack.push(it); redoStack.length = 0; toast(`Movió ${it.name} · Ctrl+Z para deshacer`); }
+    await reload(); undoUI();
+  }
+  async function undo() {
+    const it = undoStack.pop(); if (!it) return;
+    if (await applyChange(it, 'undo')) { redoStack.push(it); toast(`Deshecho: ${it.label}`); } else undoStack.push(it);
+    await reload(); undoUI();
+  }
+  async function redo() {
+    const it = redoStack.pop(); if (!it) return;
+    if (await applyChange(it, 'redo')) { undoStack.push(it); toast(`Rehecho: ${it.label}`); } else redoStack.push(it);
+    await reload(); undoUI();
   }
 
   // ---------- Selección y paneles ----------
@@ -229,9 +256,9 @@ export async function plantaView(root, query = {}) {
     bar.classList.toggle('hidden', tool === 'select' && !editing);
     clear(bar);
     if (editing) return;
-    const msg = { pole: 'Haga clic en el mapa para colocar un poste.', cable: 'Haga clic en postes (se ajustan automáticamente) o en el mapa para trazar el cable. Doble clic o «Terminar» para finalizar.' }[tool]
+    const msg = { move: 'Modo mover: arrastre postes, cajas o clientes para reubicarlos. Ctrl+Z deshace el último movimiento.', pole: 'Haga clic en el mapa para colocar un poste.', cable: 'Haga clic en postes (se ajustan automáticamente) o en el mapa para trazar el cable. Doble clic o «Terminar» para finalizar.' }[tool]
       || `Haga clic en el mapa para colocar: ${FIBER_KIND[tool]?.label || ''}.`;
-    bar.append(h('span', null, msg), btn('Salir', { onClick: () => setTool('select') }));
+    bar.append(h('span', null, msg), tool === 'move' ? btn('Deshacer', { ic: 'undo', onClick: () => undo() }) : null, btn(tool === 'move' ? 'Terminar de mover' : 'Salir', { onClick: () => setTool('select') }));
   }
 
   const snap = (ll) => {
@@ -334,7 +361,7 @@ export async function plantaView(root, query = {}) {
   // ---------- Edición de trazado existente ----------
   function startEditPath(cable) {
     closePanel(true);
-    editing = { id: cable.id, name: cable.name, props: cable.props, pts: cable.path.map((p) => ({ lat: p[0], lng: p[1], pole: p[2] })) };
+    editing = { id: cable.id, name: cable.name, props: cable.props, orig: cable.path.map((p) => [p[0], p[1], p[2]]), pts: cable.path.map((p) => ({ lat: p[0], lng: p[1], pole: p[2] })) };
     tool = 'select';
     renderEdit();
   }
@@ -375,17 +402,21 @@ export async function plantaView(root, query = {}) {
     const ed = editing;
     const path = ed.pts.map((p) => [p.lat, p.lng, p.pole]);
     const pr = { ...ed.props, longitud_m: Math.round(pathLen(path)) };
-    if (await guard(() => api.patch(`/api/fiber/${ed.id}`, { path, props: pr }))) { toast('Trazado guardado'); cancelEdit(); await reload(); selectEl(ed.id); }
+    if (await guard(() => api.patch(`/api/fiber/${ed.id}`, { path, props: pr }))) {
+      undoStack.push({ type: 'path', id: ed.id, from: ed.orig, to: path, label: `trazado de ${ed.name}` }); redoStack.length = 0; undoUI();
+      toast('Trazado guardado · Ctrl+Z para deshacer'); cancelEdit(); await reload(); selectEl(ed.id);
+    }
   }
 
   // ---------- Panel de herramientas ----------
   const stats = h('div', { class: 'muted small', style: { padding: '0 4px' } });
   const toolBtn = (key, label, ic) => (toolBtns[key] = btn(label, { ic, onClick: () => setTool(key) }));
   ctl.append(h('strong', { style: { padding: '2px 4px' } }, 'Planta externa'), stats);
-  toolBtns.select = btn('Seleccionar / mover', { ic: 'map', onClick: () => setTool('select') });
+  toolBtns.select = btn('Seleccionar', { ic: 'map', onClick: () => setTool('select') });
   toolBtns.select.classList.add('on');
   ctl.append(toolBtns.select);
   if (editable) {
+    ctl.append(h('h5', null, 'Editar'), toolBtn('move', 'Mover elementos', 'map'), h('div', { class: 'row gap' }, undoBtn, redoBtn));
     ctl.append(h('h5', null, 'Dibujar'), toolBtn('pole', 'Poste', 'plus'), toolBtn('cable', 'Cable de fibra', 'fiber'));
     ctl.append(h('h5', null, 'Colocar'), ...PLACEABLE.map((k) => toolBtn(k, FIBER_KIND[k].label.split(' /')[0], 'plus')));
   } else ctl.append(h('p', { class: 'muted small' }, 'Su rol es de consulta: no puede editar la planta.'));
@@ -409,10 +440,14 @@ export async function plantaView(root, query = {}) {
   // Esc cancela
   const onKey = (ev) => {
     if (!document.body.contains(mapEl)) { document.removeEventListener('keydown', onKey); return; }
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.querySelector('.overlay');
+    if (!typing && editable && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); (ev.shiftKey ? redo : undo)(); return; }
+    if (!typing && editable && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') { ev.preventDefault(); redo(); return; }
     if (ev.key === 'Escape') { if (editing) { cancelEdit(); draw(); } else if (tool !== 'select') setTool('select'); }
   };
   document.addEventListener('keydown', onKey);
 
+  undoUI();
   draw(); fit();
   setTimeout(() => map.invalidateSize(), 60);
   if (query.pole) { const p = poleById().get(Number(query.pole)); if (p) { map.setView([p.lat, p.lng], 19); selectPole(p.id); } }

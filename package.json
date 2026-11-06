@@ -1,6 +1,6 @@
 {
   "name": "documentacion-smart",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Sistema de documentación visual de infraestructura de red – Smart Connection",
   "private": true,
   "type": "module",

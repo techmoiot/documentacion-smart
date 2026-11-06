@@ -173,3 +173,5 @@ Seleccione cualquier elemento (cable, splitter, NAP, cliente…) y use:
 La pérdida usa 0,35 dB/km, la pérdida de inserción de cada splitter (o la típica de su relación) y 0,1 dB por caja/ODF.
 
 **Fibra FTTH en lista**: la vista por defecto es ahora un listado tipo inventario (tipo, nombre, código, de quién depende, detalle, nodo, clientes aguas abajo y estado), con filtros por tipo y estado, búsqueda y exportación CSV; clic en una fila abre su ficha. El diagrama de árbol sigue disponible con el botón **Árbol** (se recuerda la última vista).
+
+**Mover con seguridad (Planta externa)**: por defecto los postes y cajas ya **no se arrastran** al tocarlos; solo se seleccionan. Para reubicar use la herramienta **Mover elementos**. Cada movimiento (y cada edición de trazado de un cable) se puede **Deshacer / Rehacer** con los botones o con Ctrl+Z / Ctrl+Y; si se deshace el movimiento de un poste, los cables que pasan por él vuelven con él.
