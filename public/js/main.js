@@ -19,7 +19,8 @@ function showLogin(message = '') {
   const user = h('input', { type: 'text', name: 'username', autocomplete: 'username', required: true, autofocus: true });
   const pass = h('input', { type: 'password', name: 'password', autocomplete: 'current-password', required: true });
   const form = h('form', { class: 'login-box' },
-    h('div', { class: 'brand' }, h('div', { class: 'logo' }, icon('topo', 18)), h('div', null, 'Smart Connection', h('small', null, 'Documentación de infraestructura de red'))),
+    h('div', { class: 'logo-tile' }, h('img', { src: '/img/logo.png', alt: 'Techmo · For engineers, by engineers' })),
+    h('div', { class: 'login-title' }, 'Smart Connection', h('small', null, 'Documentación de infraestructura de red')),
     h('div', null, h('label', null, 'Usuario'), user), h('div', null, h('label', null, 'Contraseña'), pass), err,
     h('button', { class: 'btn primary', type: 'submit', style: { justifyContent: 'center' } }, 'Ingresar'));
   form.addEventListener('submit', async (e) => {
@@ -43,7 +44,7 @@ let mainEl = null;
 function buildShell() {
   clear(app);
   const nav = h('nav', { class: 'nav', 'aria-label': 'Navegación principal' },
-    h('div', { class: 'brand' }, h('div', { class: 'logo' }, icon('topo', 18)), h('div', null, 'Smart Connection', h('small', null, 'Red documentada'))),
+    h('div', { class: 'brand' }, h('div', { class: 'logo img' }, h('img', { src: '/img/logo.png', alt: 'Techmo' })), h('div', null, 'Smart Connection', h('small', null, 'Red documentada'))),
     NAV.map(([href, label, ic]) => h('a', { href, 'data-nav': href }, icon(ic, 17), h('span', null, label))),
     state.user.role === 'admin' ? h('a', { href: '#/usuarios', 'data-nav': '#/usuarios' }, icon('users', 17), h('span', null, 'Usuarios')) : null,
     h('div', { class: 'spacer' }));
