@@ -19,7 +19,7 @@ export async function mapView(root, query = {}) {
   root.append(h('div', { class: 'page fill' }, wrap));
 
   const map = L.map(mapEl, { zoomControl: true, preferCanvas: false }).setView([14.6349, -90.5069], 11);
-  L.tileLayer(state.meta.tileUrl, { maxZoom: 19, attribution: state.meta.tileAttribution }).addTo(map);
+  L.tileLayer(state.meta.tileUrl, { maxZoom: 19, attribution: state.meta.tileAttribution, referrerPolicy: 'strict-origin-when-cross-origin' }).addTo(map);
   L.control.scale({ imperial: false }).addTo(map);
 
   const layers = { nodes: L.layerGroup().addTo(map), links: L.layerGroup().addTo(map), fiber: L.layerGroup().addTo(map), naps: L.layerGroup().addTo(map), clients: L.layerGroup(), nodeLinks: L.layerGroup().addTo(map), measure: L.layerGroup().addTo(map) };
