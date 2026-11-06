@@ -1,6 +1,6 @@
 // Utilidades HTTP compartidas
 export class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, code) { super(message); this.status = status; this.code = code; }
 }
 export const bad = (msg) => new HttpError(400, msg);
 export const notFound = (what = 'Recurso') => new HttpError(404, `${what} no encontrado`);

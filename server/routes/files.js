@@ -8,6 +8,7 @@ import { require_, requireAuth } from '../auth.js';
 import { audit } from '../audit.js';
 import { UPLOAD_DIR, MAX_UPLOAD_MB } from '../config.js';
 import { wrap, bad, notFound, intParam } from '../http.js';
+import { visible } from '../scope.js';
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -28,10 +29,17 @@ function sniffImage(buf, ext) {
 
 export const router = express.Router();
 
+/** El archivo solo es accesible si su entidad pertenece a un proyecto del usuario. */
+function entityVisible(type, id) {
+  const r = get(`SELECT project_id FROM ${ENTITY_TABLE[type]} WHERE id = ?`, id);
+  return !!r && visible(r.project_id);
+}
+
 router.get('/files', requireAuth, wrap((req, res) => {
   const type = String(req.query.entity_type || '');
   if (!ENTITY_TABLE[type]) throw bad('Tipo de entidad inválido');
   const id = intParam(req.query.entity_id, 'entity_id');
+  if (!entityVisible(type, id)) throw notFound('Elemento');
   res.json(all('SELECT id, entity_type, entity_id, kind, original_name, mime, size, caption, uploaded_by, created_at FROM files WHERE entity_type = ? AND entity_id = ? ORDER BY id DESC', type, id));
 }));
 
@@ -43,7 +51,7 @@ router.post(
     const type = String(req.query.entity_type || '');
     if (!ENTITY_TABLE[type]) throw bad('Tipo de entidad inválido');
     const id = intParam(req.query.entity_id, 'entity_id');
-    if (!get(`SELECT 1 AS x FROM ${ENTITY_TABLE[type]} WHERE id = ?`, id)) throw notFound('Elemento');
+    if (!entityVisible(type, id)) throw notFound('Elemento');
     if (!Buffer.isBuffer(req.body) || !req.body.length) throw bad('Archivo vacío');
 
     const original = path.basename(String(req.query.name || 'archivo')).replace(/[^\w.\- ()áéíóúñÁÉÍÓÚÑ]/g, '_').slice(0, 120) || 'archivo';
@@ -67,7 +75,8 @@ router.post(
 
 router.patch('/files/:id', require_('update'), wrap((req, res) => {
   const id = intParam(req.params.id);
-  if (!get('SELECT 1 AS x FROM files WHERE id = ?', id)) throw notFound('Archivo');
+  const cur = get('SELECT entity_type, entity_id FROM files WHERE id = ?', id);
+  if (!cur || !entityVisible(cur.entity_type, cur.entity_id)) throw notFound('Archivo');
   run('UPDATE files SET caption = ? WHERE id = ?', String(req.body?.caption ?? '').slice(0, 200), id);
   res.json(get('SELECT id, caption FROM files WHERE id = ?', id));
 }));
@@ -75,7 +84,7 @@ router.patch('/files/:id', require_('update'), wrap((req, res) => {
 router.delete('/files/:id', require_('write'), wrap((req, res) => {
   const id = intParam(req.params.id);
   const f = get('SELECT * FROM files WHERE id = ?', id);
-  if (!f) throw notFound('Archivo');
+  if (!f || !entityVisible(f.entity_type, f.entity_id)) throw notFound('Archivo');
   run('DELETE FROM files WHERE id = ?', id);
   try { fs.unlinkSync(path.join(UPLOAD_DIR, f.stored_name)); } catch { /* ya no existe */ }
   audit(req.user, 'modificar', ENTITY_AUDIT[f.entity_type], f.entity_id, `Eliminó archivo «${f.original_name}»`);
@@ -86,7 +95,7 @@ router.delete('/files/:id', require_('write'), wrap((req, res) => {
 export const fileServer = express.Router();
 fileServer.get('/:id', requireAuth, wrap((req, res) => {
   const f = get('SELECT * FROM files WHERE id = ?', intParam(req.params.id));
-  if (!f) throw notFound('Archivo');
+  if (!f || !entityVisible(f.entity_type, f.entity_id)) throw notFound('Archivo');
   const full = path.join(UPLOAD_DIR, f.stored_name);
   if (!fs.existsSync(full)) throw notFound('Archivo');
   res.setHeader('Content-Type', f.mime);

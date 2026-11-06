@@ -236,6 +236,37 @@ const MIGRATIONS = [
     id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'other',
     brand TEXT DEFAULT '', model TEXT DEFAULT '', u INTEGER NOT NULL DEFAULT 1, groups TEXT NOT NULL DEFAULT '[]',
     created_by TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
+  // 6: proyectos (cada proyecto aísla sus datos y se comparte por usuario)
+  `CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT DEFAULT '', color TEXT DEFAULT '#38bdf8', created_by TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')));
+  CREATE TABLE IF NOT EXISTS project_members (project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY (project_id, user_id));
+  INSERT INTO projects (name, description, created_by) VALUES ('General', 'Proyecto inicial (datos existentes)', 'sistema');
+  ALTER TABLE nodes ADD COLUMN project_id INTEGER REFERENCES projects(id);
+  UPDATE nodes SET project_id = 1;
+  CREATE INDEX IF NOT EXISTS idx_nodes_project ON nodes(project_id);
+  ALTER TABLE racks ADD COLUMN project_id INTEGER REFERENCES projects(id);
+  UPDATE racks SET project_id = 1;
+  CREATE INDEX IF NOT EXISTS idx_racks_project ON racks(project_id);
+  ALTER TABLE devices ADD COLUMN project_id INTEGER REFERENCES projects(id);
+  UPDATE devices SET project_id = 1;
+  CREATE INDEX IF NOT EXISTS idx_devices_project ON devices(project_id);
+  ALTER TABLE antennas ADD COLUMN project_id INTEGER REFERENCES projects(id);
+  UPDATE antennas SET project_id = 1;
+  CREATE INDEX IF NOT EXISTS idx_antennas_project ON antennas(project_id);
+  ALTER TABLE radiolinks ADD COLUMN project_id INTEGER REFERENCES projects(id);
+  UPDATE radiolinks SET project_id = 1;
+  CREATE INDEX IF NOT EXISTS idx_radiolinks_project ON radiolinks(project_id);
+  ALTER TABLE connections ADD COLUMN project_id INTEGER REFERENCES projects(id);
+  UPDATE connections SET project_id = 1;
+  CREATE INDEX IF NOT EXISTS idx_connections_project ON connections(project_id);
+  ALTER TABLE poles ADD COLUMN project_id INTEGER REFERENCES projects(id);
+  UPDATE poles SET project_id = 1;
+  CREATE INDEX IF NOT EXISTS idx_poles_project ON poles(project_id);
+  ALTER TABLE fiber_elements ADD COLUMN project_id INTEGER REFERENCES projects(id);
+  UPDATE fiber_elements SET project_id = 1;
+  CREATE INDEX IF NOT EXISTS idx_fiber_elements_project ON fiber_elements(project_id);
+  ALTER TABLE audit_log ADD COLUMN project_id INTEGER;
+  UPDATE audit_log SET project_id = 1 WHERE entity_type IN ('nodes','racks','devices','connections','fiber','antennas','radiolinks','poles');
+  INSERT INTO project_members (project_id, user_id) SELECT 1, id FROM users WHERE role <> 'admin';`,
 ];
 {
   const current = db.prepare('PRAGMA user_version').get().user_version;

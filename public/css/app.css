@@ -249,3 +249,8 @@ table.t tbody tr { cursor: pointer; } table.t tbody tr:hover { background: #1523
 
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .seg .btn { border: 0; border-radius: 0; }
+
+.proj-select { --pc: #64748b; background: #0e1830; color: var(--text); border: 1px solid var(--line); border-left: 4px solid var(--pc); border-radius: 10px; padding: 7px 10px; max-width: 230px; font: inherit; font-size: 13px; }
+.proj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; margin-top: 14px; }
+.card.proj { --pc: #38bdf8; padding: 14px 16px; border-top: 4px solid var(--pc); } .card.proj.active { outline: 2px solid var(--pc); }
+.card.proj .pdot { width: 12px; height: 12px; border-radius: 50%; background: var(--pc); }

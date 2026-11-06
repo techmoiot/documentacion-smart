@@ -151,3 +151,13 @@ En **Radioenlaces**: *Nueva torre* (nombre, código, estructura, altura, GPS, re
 
 - **Plantillas**: al crear un equipo elija una plantilla (incluye `MikroTik CCR1036-12G-2S`: 12 × ether Gigabit, 2 × SFP, consola) o parta en blanco y defina tipo, marca, modelo, altura en U y grupos de puertos a su medida. Marque *Guardar como plantilla reutilizable* y aparecerá con ★ en la lista; se administran en **Inventario → Plantillas**.
 - **Frente / Atrás**: cada equipo se monta en el *frente*, la parte *posterior* o *ambos lados* (profundidad completa). En la vista del rack, el selector **Frente | Atrás** alterna la cara; las U de cada lado son independientes (puede haber un equipo al frente y otro atrás en la misma U) salvo los de ambos lados, que ocupan las dos.
+
+## Proyectos
+
+Todo (nodos, racks, equipos, antenas, radioenlaces, conexiones, postes y fibra) pertenece a un **proyecto** y no se mezcla con otros.
+
+- **Selector de proyecto** (barra superior): un proyecto o «Todos los proyectos» para verlos juntos (mapa, inventario, planta externa, búsqueda e historial respetan la selección). Al crear algo con «Todos» seleccionado, el sistema pregunta en qué proyecto.
+- **Menú Proyectos**: crear, editar, **compartir** con usuarios (solo administradores), **fusionar** un proyecto dentro de otro y eliminar proyectos vacíos.
+- **Acceso**: los administradores ven todo; el resto solo los proyectos con los que se compartan. Un usuario nuevo no ve nada hasta que se le comparta un proyecto.
+- **Importar KMZ**: cada archivo crea su propio proyecto (o se agrega a uno existente a elección). Postes y cables solo se anclan a postes del mismo proyecto.
+- Los racks, equipos y antenas heredan el proyecto de su nodo. En una instalación existente, todos los datos quedan en el proyecto «General» y los usuarios actuales conservan acceso a él.

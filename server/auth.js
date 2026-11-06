@@ -110,5 +110,5 @@ export function loginThrottle(key) {
 }
 
 export function listUsers() {
-  return all('SELECT id, username, name, role, active, created_at FROM users ORDER BY username');
+  return all("SELECT id, username, name, role, active, created_at, (SELECT group_concat(project_id) FROM project_members WHERE user_id = users.id) AS projects FROM users ORDER BY username");
 }

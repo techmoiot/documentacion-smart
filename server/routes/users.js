@@ -67,7 +67,11 @@ router.post('/users', require_('admin'), wrap((req, res) => {
   checkPassword(req.body?.password);
   if (get('SELECT 1 AS x FROM users WHERE username = ?', username)) throw conflict('Ya existe ese usuario');
   const r = run('INSERT INTO users (username, name, password_hash, role) VALUES (?,?,?,?)', username, String(req.body?.name || '').trim().slice(0, 80), hashPassword(req.body.password), role);
-  audit(req.user, 'crear', 'users', Number(r.lastInsertRowid), `Creó usuario «${username}» (${role})`);
+  const newId = Number(r.lastInsertRowid);
+  for (const pid of [...new Set((Array.isArray(req.body?.project_ids) ? req.body.project_ids : []).map(Number))]) {
+    if (get('SELECT 1 AS x FROM projects WHERE id = ?', pid)) run('INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (?,?)', pid, newId);
+  }
+  audit(req.user, 'crear', 'users', newId, `Creó usuario «${username}» (${role})`);
   res.status(201).json(listUsers().find((u) => u.id === Number(r.lastInsertRowid)));
 }));
 

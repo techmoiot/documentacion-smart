@@ -4,7 +4,10 @@ import { get, run, tx } from './db.js';
 import { createPortGroups } from './routes/crud.js';
 import { audit } from './audit.js';
 
+const PROJECT_TABLES = new Set(['nodes', 'racks', 'devices', 'antennas', 'radiolinks', 'connections', 'poles', 'fiber_elements']);
+let demoProject = null;
 const ins = (table, obj) => {
+  if (PROJECT_TABLES.has(table)) obj = { ...obj, project_id: demoProject };
   const cols = Object.keys(obj);
   return Number(run(`INSERT INTO ${table} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`, ...cols.map((c) => obj[c])).lastInsertRowid);
 };
@@ -15,6 +18,7 @@ export function seedDemo() {
     return;
   }
   tx(() => {
+    demoProject = Number(run("INSERT INTO projects (name, description, color, created_by) VALUES ('Demostración', 'Datos de ejemplo (DEMO-*)', '#a78bfa', 'sistema')").lastInsertRowid);
     const n1 = ins('nodes', { code: 'DEMO-N001', name: 'Nodo Central', type: 'principal', lat: 14.6349, lng: -90.5069, address: 'Ciudad de Guatemala (demo)', description: 'Nodo principal de demostración', status: 'operativo', installed_at: '2024-03-01', responsible: 'Ing. de red' });
     const n2 = ins('nodes', { code: 'DEMO-T001', name: 'Torre Cerro Alto', type: 'torre', lat: 14.5612, lng: -90.4421, address: 'Cerro Alto (demo)', description: 'Torre de 45 m con enlaces de backhaul', status: 'operativo', installed_at: '2024-05-12', responsible: 'Técnico de campo' });
     const n3 = ins('nodes', { code: 'DEMO-N002', name: 'Nodo Distribución Norte', type: 'distribucion', lat: 14.7011, lng: -90.4803, address: 'Zona norte (demo)', description: 'Distribución FTTH y sector inalámbrico', status: 'degradado', installed_at: '2024-08-20', responsible: 'Técnico de campo' });

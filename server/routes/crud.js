@@ -5,6 +5,7 @@ import { require_ } from '../auth.js';
 import { audit } from '../audit.js';
 import { ENTITIES, sanitize } from '../schema-meta.js';
 import { HttpError, bad, conflict, notFound, wrap, intParam, ph } from '../http.js';
+import { scope, selectedFilter, visible, pickProject, projectOf } from '../scope.js';
 
 export const router = express.Router();
 
@@ -21,15 +22,17 @@ const CONN_SELECT = `
   LEFT JOIN ports pa ON pa.id = c.a_port_id
   LEFT JOIN ports pb ON pb.id = c.b_port_id`;
 
-export const connectionById = (id) => get(`${CONN_SELECT} WHERE c.id = ?`, id);
+export const connectionById = (id) => { const c = get(`${CONN_SELECT} WHERE c.id = ?`, id); return c && visible(c.project_id) ? c : undefined; };
 
 function row(entity, id) {
   const r = get(`SELECT * FROM ${ENTITIES[entity].table} WHERE id = ?`, id);
-  if (!r) throw notFound(ENTITIES[entity].label[0].toUpperCase() + ENTITIES[entity].label.slice(1));
+  if (!r || !visible(r.project_id)) throw notFound(ENTITIES[entity].label[0].toUpperCase() + ENTITIES[entity].label.slice(1));
   return r;
 }
 const exists = (table, id, label) => {
-  if (id != null && !get(`SELECT 1 AS x FROM ${table} WHERE id = ?`, id)) throw bad(`${label} inexistente (id ${id})`);
+  if (id == null) return;
+  const r = get(`SELECT * FROM ${table} WHERE id = ?`, id);
+  if (!r || ('project_id' in r && !visible(r.project_id))) throw bad(`${label} inexistente (id ${id})`);
 };
 
 function withJson(def, r) {
@@ -43,8 +46,8 @@ function withJson(def, r) {
 }
 
 /** Mantiene los trazados de cables al mover (lat/lng) o eliminar (null) un poste. */
-function syncPolePaths(poleId, lat, lng) {
-  for (const f of all('SELECT id, path FROM fiber_elements WHERE path IS NOT NULL')) {
+function syncPolePaths(poleId, lat, lng, projectId) {
+  for (const f of all('SELECT id, path FROM fiber_elements WHERE path IS NOT NULL AND project_id = ?', projectId)) {
     let path;
     try { path = JSON.parse(f.path); } catch { continue; }
     let touched = false;
@@ -161,6 +164,35 @@ function friendlyDbError(e) {
   return e;
 }
 
+// ---------- Proyecto de cada elemento ----------
+/** Devuelve el proyecto que corresponde a un elemento nuevo o modificado (undefined = sin cambio). */
+function deriveProject(entity, body, data, current) {
+  const m = { ...current, ...data };
+  const fromParent = (table, id) => { const p = projectOf(table, id); return p != null && visible(p) ? p : null; };
+  switch (entity) {
+    case 'nodes': case 'poles':
+      return current ? undefined : pickProject(body.project_id);
+    case 'racks': return fromParent('nodes', m.node_id) ?? undefined;
+    case 'antennas': return fromParent('nodes', m.node_id) ?? undefined;
+    case 'radiolinks': return fromParent('antennas', m.a_antenna_id) ?? undefined;
+    case 'connections': return fromParent('devices', m.a_device_id) ?? undefined;
+    case 'devices': {
+      const p = fromParent('racks', m.rack_id) ?? fromParent('nodes', m.node_id);
+      if (p != null) return p;
+      return current ? undefined : pickProject(body.project_id);
+    }
+    case 'fiber': {
+      if (m.parent_id != null) {
+        const p = fromParent('fiber_elements', m.parent_id);
+        if (current && p != null && p !== current.project_id) throw bad('El elemento padre pertenece a otro proyecto');
+        if (p != null) return current ? undefined : p;
+      }
+      return current ? undefined : (fromParent('nodes', m.node_id) ?? pickProject(body.project_id));
+    }
+    default: return undefined;
+  }
+}
+
 // ---------- Rutas CRUD genéricas ----------
 function mount(entity, path = entity) {
   const def = ENTITIES[entity];
@@ -170,9 +202,10 @@ function mount(entity, path = entity) {
     for (const f of def.filters) {
       if (req.query[f] !== undefined && req.query[f] !== '') { where.push(`${f} = ?`); params.push(req.query[f]); }
     }
+    const pf = selectedFilter(entity === 'connections' ? 'c.project_id' : 'project_id');
     const rows = entity === 'connections'
-      ? all(`${CONN_SELECT} ${where.length ? 'WHERE ' + where.map((w) => 'c.' + w).join(' AND ') : ''} ORDER BY c.id`, ...params)
-      : all(`SELECT * FROM ${def.table} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${def.order}`, ...params);
+      ? all(`${CONN_SELECT} WHERE ${[pf.sql, ...where.map((w) => 'c.' + w)].join(' AND ')} ORDER BY c.id`, ...pf.params, ...params)
+      : all(`SELECT * FROM ${def.table} WHERE ${[pf.sql, ...where].join(' AND ')} ORDER BY ${def.order}`, ...pf.params, ...params);
     res.json(rows.map((r) => withJson(def, r)));
   }));
 
@@ -190,6 +223,7 @@ function mount(entity, path = entity) {
     try {
       tx(() => {
         validate(entity, data, null);
+        data.project_id = deriveProject(entity, req.body || {}, data, null) ?? pickProject(req.body?.project_id);
         if (entity === 'devices') data.u_height = data.u_height || 1;
         const cols = Object.keys(data);
         const r = run(`INSERT INTO ${def.table} (${cols.join(',')}) VALUES (${ph(cols)})`, ...cols.map((c) => data[c]));
@@ -221,9 +255,11 @@ function mount(entity, path = entity) {
     try {
       tx(() => {
         validate(entity, data, current);
+        const np = deriveProject(entity, req.body || {}, data, current);
+        if (np !== undefined && np !== current.project_id) data.project_id = np;
         const cols = Object.keys(data);
         run(`UPDATE ${def.table} SET ${cols.map((c) => `${c} = ?`).join(',')}, updated_at = datetime('now') WHERE id = ?`, ...cols.map((c) => data[c]), id);
-        if (entity === 'poles' && ('lat' in data || 'lng' in data)) syncPolePaths(id, data.lat ?? current.lat, data.lng ?? current.lng);
+        if (entity === 'poles' && ('lat' in data || 'lng' in data)) syncPolePaths(id, data.lat ?? current.lat, data.lng ?? current.lng, current.project_id);
       });
     } catch (e) { throw e instanceof HttpError ? e : friendlyDbError(e); }
     const updated = entity === 'connections' ? connectionById(id) : row(entity, id);
@@ -234,7 +270,7 @@ function mount(entity, path = entity) {
   router.delete(`/${path}/:id`, require_('write'), wrap((req, res) => {
     const id = intParam(req.params.id);
     const current = row(entity, id);
-    try { tx(() => { if (entity === 'poles') syncPolePaths(id, null, null); run(`DELETE FROM ${def.table} WHERE id = ?`, id); }); } catch (e) { throw friendlyDbError(e); }
+    try { tx(() => { if (entity === 'poles') syncPolePaths(id, null, null, current.project_id); run(`DELETE FROM ${def.table} WHERE id = ?`, id); }); } catch (e) { throw friendlyDbError(e); }
     audit(req.user, 'eliminar', entity, id, `Eliminó ${def.label} «${current[def.nameField] ?? id}»`, current, null);
     res.json({ ok: true });
   }));
@@ -284,6 +320,7 @@ router.patch('/ports/:id', require_('update'), wrap((req, res) => {
   const id = intParam(req.params.id);
   const p = get('SELECT * FROM ports WHERE id = ?', id);
   if (!p) throw notFound('Puerto');
+  row('devices', p.device_id);
   const label = req.body.label != null ? String(req.body.label).slice(0, 120) : p.label;
   const speed = req.body.speed != null ? String(req.body.speed).slice(0, 40) : p.speed;
   run('UPDATE ports SET label = ?, speed = ? WHERE id = ?', label, speed, id);
@@ -295,6 +332,7 @@ router.delete('/ports/:id', require_('write'), wrap((req, res) => {
   const id = intParam(req.params.id);
   const p = get('SELECT * FROM ports WHERE id = ?', id);
   if (!p) throw notFound('Puerto');
+  row('devices', p.device_id);
   run('DELETE FROM ports WHERE id = ?', id);
   audit(req.user, 'modificar', 'devices', p.device_id, `Eliminó puerto ${p.name}`);
   res.json({ ok: true });

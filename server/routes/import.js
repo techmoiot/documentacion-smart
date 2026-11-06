@@ -2,10 +2,11 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { all, run, tx } from '../db.js';
+import { all, get, run, tx } from '../db.js';
 import { require_ } from '../auth.js';
 import { audit } from '../audit.js';
-import { wrap, bad } from '../http.js';
+import { wrap, bad, conflict } from '../http.js';
+import { scope, pickProject } from '../scope.js';
 import { readKmlText, parseKml } from '../kml.js';
 
 export const router = express.Router();
@@ -64,8 +65,8 @@ router.post('/import/kmz/preview', require_('write'), express.raw({ type: () => 
   if (!parsed.features.length) throw bad('El archivo no contiene elementos con coordenadas');
   prune();
   const token = crypto.randomBytes(16).toString('hex');
-  cache.set(token, { uid: req.user.id, features: parsed.features, name: path.basename(String(req.query.name || 'archivo.kmz')).slice(0, 100), ts: Date.now() });
-  res.json({ token, name: parsed.docName, total: parsed.features.length, groups: summarize(parsed.features) });
+  cache.set(token, { uid: req.user.id, features: parsed.features, docName: parsed.docName || '', name: path.basename(String(req.query.name || 'archivo.kmz')).slice(0, 100), ts: Date.now() });
+  res.json({ token, name: parsed.docName, suggestedProject: (parsed.docName || path.basename(String(req.query.name || 'Proyecto'), path.extname(String(req.query.name || '')))).trim().slice(0, 80), total: parsed.features.length, groups: summarize(parsed.features) });
 }));
 
 const fibersOf = (txt) => {
@@ -85,14 +86,23 @@ router.post('/import/kmz/commit', require_('write'), wrap((req, res) => {
     if (f.geom === 'LineString') return LINE_KINDS.includes(k) ? k : 'ignore';
     return 'ignore';
   };
-  const r = { poles: 0, polesExisting: 0, naps: 0, closures: 0, splitters: 0, clients: 0, cables: 0, skipped: 0, duplicates: 0, linkedVertices: 0 };
+  // Proyecto de destino: uno nuevo (por nombre) o uno existente
+  let projectId;
+  const newName = String(req.body?.new_project || '').trim().slice(0, 80);
+  if (newName) {
+    if (get('SELECT 1 AS x FROM projects WHERE name = ? COLLATE NOCASE', newName)) throw conflict('Ya existe un proyecto con ese nombre; elíjalo de la lista');
+    projectId = Number(run('INSERT INTO projects (name, description, created_by) VALUES (?,?,?)', newName, `Importado de ${job.name}`, req.user.username).lastInsertRowid);
+    if (req.user.role !== 'admin') run('INSERT OR IGNORE INTO project_members (project_id, user_id) VALUES (?,?)', projectId, req.user.id);
+    scope().accessible.push(projectId);
+  } else projectId = pickProject(req.body?.project_id);
+  const r = { project: projectId, poles: 0, polesExisting: 0, naps: 0, closures: 0, splitters: 0, clients: 0, cables: 0, skipped: 0, duplicates: 0, linkedVertices: 0 };
 
   tx(() => {
     const grid = new Grid();
     const codes = new Set();
-    for (const p of all('SELECT id, code, lat, lng FROM poles')) { grid.add({ id: p.id, lat: p.lat, lng: p.lng }); codes.add(p.code); }
+    for (const p of all('SELECT id, code, lat, lng FROM poles WHERE project_id = ?', projectId)) { grid.add({ id: p.id, lat: p.lat, lng: p.lng }); codes.add(p.code); }
     const existing = new Map(); // `${kind}|${name}` → [[lat,lng]]
-    for (const e of all('SELECT kind, name, lat, lng, path FROM fiber_elements')) {
+    for (const e of all('SELECT kind, name, lat, lng, path FROM fiber_elements WHERE project_id = ?', projectId)) {
       let pt = e.lat != null ? [e.lat, e.lng] : null;
       if (!pt && e.path) { try { const p = JSON.parse(e.path); pt = p?.[0]; } catch { /* sin trazado */ } }
       if (pt) { const k = `${e.kind}|${e.name}`; (existing.get(k) || existing.set(k, []).get(k)).push(pt); }
@@ -108,13 +118,13 @@ router.post('/import/kmz/commit', require_('write'), wrap((req, res) => {
       if (grid.near(lat, lng, 1)) { r.polesExisting++; continue; }
       let code = String(f.name || '').trim().slice(0, 40);
       if (!code || codes.has(code)) code = '';
-      const id = Number(run('INSERT INTO poles (code, name, lat, lng, notes) VALUES (?,?,?,?,?)', code, '', lat, lng, String(f.description || '').slice(0, 500)).lastInsertRowid);
+      const id = Number(run('INSERT INTO poles (code, name, lat, lng, notes, project_id) VALUES (?,?,?,?,?,?)', code, '', lat, lng, String(f.description || '').slice(0, 500), projectId).lastInsertRowid);
       if (!code) { code = `P-${String(id).padStart(4, '0')}`; run('UPDATE poles SET code = ? WHERE id = ?', code, id); }
       codes.add(code); grid.add({ id, lat, lng }); r.poles++;
     }
     // 2) cajas, splitters, clientes y cables
     const ins = (kind, name, lat, lng, pathJson, props, notes) =>
-      run('INSERT INTO fiber_elements (kind, name, lat, lng, path, props, notes) VALUES (?,?,?,?,?,?,?)', kind, name, lat, lng, pathJson, JSON.stringify(props), notes);
+      run('INSERT INTO fiber_elements (kind, name, lat, lng, path, props, notes, project_id) VALUES (?,?,?,?,?,?,?,?)', kind, name, lat, lng, pathJson, JSON.stringify(props), notes, projectId);
     for (const { f, kind } of feats) {
       if (kind === 'ignore') { r.skipped++; continue; }
       if (kind === 'pole') continue;
@@ -146,6 +156,6 @@ router.post('/import/kmz/commit', require_('write'), wrap((req, res) => {
 
   cache.delete(String(req.body.token));
   const summary = `Importó «${job.name}»: ${r.poles} postes, ${r.cables} cables, ${r.naps} NAP, ${r.closures} cajas de empalme, ${r.splitters} splitters, ${r.clients} clientes`;
-  audit(req.user, 'crear', 'poles', null, summary);
+  audit(req.user, 'crear', 'poles', null, summary, null, null, projectId);
   res.json(r);
 }));

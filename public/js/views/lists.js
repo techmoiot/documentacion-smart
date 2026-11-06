@@ -2,7 +2,7 @@
 import { api, qs } from '../api.js';
 import { STATUS, DEVICE_TYPE, LOGICAL } from '../catalog.js';
 import {
-  h, btn, badge, icon, clear, can, guard, toast, confirmBox, formModal, openPanel, closePanel, emptyState, go, fmt, debounce, download, csvCell, state, ROLE_LABEL,
+  h, btn, badge, icon, clear, can, guard, toast, confirmBox, formModal, openPanel, closePanel, emptyState, go, fmt, debounce, download, csvCell, state, ROLE_LABEL, projectChip,
 } from '../ui.js';
 import { deviceForm, templatesManager, deviceCard, connectionForm, connectionCard, auditRow, entityLabel } from './../shared.js';
 
@@ -27,7 +27,7 @@ export async function inventoryView(root, query = {}) {
     count.textContent = `${current.length} de ${devices.length} equipos`;
     for (const d of current) {
       tbody.append(h('tr', { 'data-id': d.id, onclick: () => open(d.id) },
-        h('td', null, h('strong', null, d.name)), h('td', null, DEVICE_TYPE[d.type]?.label || d.type), h('td', null, [d.brand, d.model].filter(Boolean).join(' ')), h('td', null, d.serial),
+        h('td', null, h('strong', null, d.name), ' ', projectChip(d.project_id)), h('td', null, DEVICE_TYPE[d.type]?.label || d.type), h('td', null, [d.brand, d.model].filter(Boolean).join(' ')), h('td', null, d.serial),
         h('td', null, h('code', null, d.ip || '—')), h('td', null, d.mac), h('td', null, nm.get(d.node_id)?.name || '—'),
         h('td', null, d.rack_id ? `${rackNames.get(d.rack_id) || 'Rack'} · U${d.rack_u}` : d.location || '—'), h('td', null, badge(d.status))));
     }

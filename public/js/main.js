@@ -1,11 +1,12 @@
 // Arranque de la aplicación: sesión, estructura, enrutado y búsqueda global
-import { api } from './api.js';
+import { api, projectCtx } from './api.js';
 import {
-  h, icon, state, clear, mountPanel, closePanel, toast, guard, formModal, debounce, ROLE_LABEL, can,
+  h, icon, state, clear, mountPanel, closePanel, toast, guard, formModal, debounce, ROLE_LABEL, can, go,
 } from './ui.js';
 import { homeView, nodesView, nodeView } from './views/nodes.js';
 import { mapView } from './views/map.js';
 import { plantaView } from './views/planta.js';
+import { projectsView, reloadProjects, askProject } from './views/projects.js';
 import { fiberView } from './views/fiber.js';
 import { radioView } from './views/radio.js';
 import { inventoryView, connectionsView, historyView, usersView } from './views/lists.js';
@@ -37,7 +38,7 @@ function showLogin(message = '') {
 
 // ---------- Estructura ----------
 const NAV = [
-  ['#/', 'Inicio', 'home'], ['#/mapa', 'Mapa', 'map'], ['#/nodos', 'Nodos y racks', 'rack'], ['#/planta', 'Planta externa', 'fiber'], ['#/fibra', 'Fibra FTTH', 'fiber'], ['#/radioenlaces', 'Radioenlaces', 'radio'],
+  ['#/', 'Inicio', 'home'], ['#/proyectos', 'Proyectos', 'folder'], ['#/mapa', 'Mapa', 'map'], ['#/nodos', 'Nodos y racks', 'rack'], ['#/planta', 'Planta externa', 'fiber'], ['#/fibra', 'Fibra FTTH', 'fiber'], ['#/radioenlaces', 'Radioenlaces', 'radio'],
   ['#/conexiones', 'Conexiones', 'link'], ['#/inventario', 'Inventario', 'box'], ['#/historial', 'Historial', 'history'],
 ];
 let mainEl = null;
@@ -81,7 +82,20 @@ function buildShell() {
     h('span', { class: 'name' }, h('b', null, state.user.name || state.user.username), ' · ', ROLE_LABEL[state.user.role]),
     h('button', { class: 'icon-btn', type: 'button', title: 'Cambiar contraseña', onclick: changePassword }, icon('key')),
     h('button', { class: 'icon-btn', type: 'button', title: 'Cerrar sesión', onclick: async () => { await guard(() => api.post('/api/auth/logout')); state.user = null; showLogin(); } }, icon('out')));
-  const top = h('header', { class: 'topbar' }, h('div', { class: 'crumbs', id: 'crumbs' }), h('div', { class: 'search' }, h('span', { class: 'ico' }, icon('search', 16)), input, results), userbox);
+  const projSel = h('select', { class: 'proj-select', 'aria-label': 'Proyecto activo', title: 'Proyecto activo' });
+  const fillProjects = () => {
+    const list = state.projects || [];
+    clear(projSel);
+    if (list.length !== 1) projSel.append(h('option', { value: 'all' }, list.length ? `Todos los proyectos (${list.length})` : 'Sin proyectos'));
+    for (const p of list) projSel.append(h('option', { value: String(p.id) }, p.name));
+    projSel.value = list.length === 1 ? String(list[0].id) : projectCtx.id;
+    const cur = list.find((p) => String(p.id) === projSel.value);
+    projSel.style.setProperty('--pc', cur?.color || '#64748b');
+  };
+  projSel.addEventListener('change', () => { projectCtx.id = projSel.value; fillProjects(); go(location.hash); });
+  window.addEventListener('sd:projects', fillProjects);
+  fillProjects();
+  const top = h('header', { class: 'topbar' }, h('div', { class: 'crumbs', id: 'crumbs' }), projSel, h('div', { class: 'search' }, h('span', { class: 'ico' }, icon('search', 16)), input, results), userbox);
   mainEl = h('main', { id: 'main' });
   app.append(nav, top, mainEl);
   mountPanel(app);
@@ -95,7 +109,7 @@ async function changePassword() {
 }
 
 // ---------- Enrutado ----------
-const TITLES = { '': 'Inicio', mapa: 'Mapa geográfico', planta: 'Planta externa FTTH', nodos: 'Nodos y racks', nodo: 'Nodo', fibra: 'Fibra óptica FTTH', radioenlaces: 'Radioenlaces', conexiones: 'Conexiones', inventario: 'Inventario', historial: 'Historial', usuarios: 'Usuarios' };
+const TITLES = { '': 'Inicio', proyectos: 'Proyectos', mapa: 'Mapa geográfico', planta: 'Planta externa FTTH', nodos: 'Nodos y racks', nodo: 'Nodo', fibra: 'Fibra óptica FTTH', radioenlaces: 'Radioenlaces', conexiones: 'Conexiones', inventario: 'Inventario', historial: 'Historial', usuarios: 'Usuarios' };
 let routeToken = 0;
 
 function parseHash() {
@@ -122,6 +136,7 @@ async function route() {
   try {
     switch (section) {
       case '': await homeView(view); break;
+      case 'proyectos': await projectsView(view); break;
       case 'mapa': await mapView(view, query); break;
       case 'planta': await plantaView(view, query); break;
       case 'nodos': await nodesView(view); break;
@@ -145,6 +160,8 @@ async function route() {
 async function boot() {
   try { state.meta = state.meta || await api.get('/api/meta'); } catch { /* se reintenta tras login */ }
   if (!state.meta) state.meta = await api.get('/api/meta');
+  await reloadProjects().catch(() => { state.projects = []; });
+  projectCtx.ask = askProject;
   buildShell();
   await route();
 }

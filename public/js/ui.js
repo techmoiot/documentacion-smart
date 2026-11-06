@@ -1,7 +1,7 @@
 // Utilidades de interfaz: DOM seguro, modales, formularios, panel lateral, zoom/desplazamiento
 import { STATUS } from './catalog.js';
 
-export const state = { user: null, meta: null };
+export const state = { user: null, meta: null, projects: [] };
 
 export const can = (action) => {
   const lvl = { viewer: 1, technician: 2, engineer: 3, admin: 4 };
@@ -57,6 +57,7 @@ export function icon(name, size = 16) {
     plus: 'M12 5v14M5 12h14', edit: 'M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4', trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
     search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5', x: 'M6 6l12 12M18 6L6 18', zoomIn: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5M8 11h6M11 8v6',
     zoomOut: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5M8 11h6', fit: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
+    folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
     map: 'M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14', rack: 'M5 3h14v18H5zM5 8h14M5 13h14M5 18h14', fiber: 'M4 18c4 0 4-12 8-12s4 12 8 12',
     radio: 'M12 12m-2 0a2 2 0 1 0 4 0 2 2 0 1 0-4 0M7.5 7.5a6 6 0 0 0 0 9M16.5 7.5a6 6 0 0 1 0 9M4.5 4.5a10 10 0 0 0 0 15M19.5 4.5a10 10 0 0 1 0 15',
     box: 'M4 8l8-4 8 4v8l-8 4-8-4zM4 8l8 4 8-4M12 12v8', link: 'M10 14a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1 1M14 10a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1-1',
@@ -85,6 +86,16 @@ export function icon(name, size = 16) {
 export function btn(label, opts = {}) {
   const { ic, kind = '', onClick, title, disabled } = opts;
   return h('button', { class: `btn ${kind}`.trim(), type: 'button', title, disabled, onclick: onClick }, ic ? icon(ic, 15) : null, label ? h('span', null, label) : null);
+}
+
+/** Etiqueta del proyecto (solo cuando se ven todos los proyectos juntos). */
+export function projectChip(id) {
+  const list = state.projects || [];
+  let cur = 'all';
+  try { cur = localStorage.getItem('sd_project') || 'all'; } catch { /* sin almacenamiento */ }
+  if (list.length < 2 || cur !== 'all') return null;
+  const p = list.find((x) => x.id === id);
+  return p ? h('span', { class: 'chip', style: { '--c': p.color } }, p.name) : null;
 }
 
 export function badge(status) {

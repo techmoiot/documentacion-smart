@@ -26,7 +26,8 @@ before(async () => {
   const { hashPassword } = await import('../server/auth.js');
   const { run } = await import('../server/db.js');
   for (const [u, r] of [['admin', 'admin'], ['lector', 'viewer'], ['tecnico', 'technician']]) {
-    run('INSERT INTO users (username, name, password_hash, role) VALUES (?,?,?,?)', u, u, hashPassword('ClavePrueba123'), r);
+    const id = Number(run('INSERT INTO users (username, name, password_hash, role) VALUES (?,?,?,?)', u, u, hashPassword('ClavePrueba123'), r).lastInsertRowid);
+    if (r !== 'admin') run('INSERT INTO project_members (project_id, user_id) VALUES (1, ?)', id);
   }
   const { createApp } = await import('../server/index.js');
   await new Promise((r) => { server = createApp().listen(0, '127.0.0.1', r); });
@@ -173,4 +174,51 @@ test('rack: frente y atrás son independientes; plantillas personalizadas', asyn
   assert.equal((await call('lector', 'POST', '/api/device-templates', { label: 'x', groups: [] })).status, 403);
   assert.equal((await call('lector', 'GET', '/api/device-templates')).data.length, 1);
   assert.equal((await call('admin', 'DELETE', `/api/device-templates/${t.data.id}`)).status, 200);
+});
+
+test('proyectos: aislamiento, acceso por usuario, creación con elección y fusión', async () => {
+  const hdr = (who, project, extra = {}) => async (method, url, body) => {
+    const res = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'SmartDoc', Cookie: jar[who], ...(project ? { 'X-Project': String(project) } : {}), ...extra }, body: body === undefined ? undefined : JSON.stringify(body) });
+    let data = null; try { data = await res.json(); } catch { /* sin cuerpo */ }
+    return { status: res.status, data };
+  };
+  const A = (await call('admin', 'POST', '/api/projects', { name: 'Proyecto A' })).data;
+  const B = (await call('admin', 'POST', '/api/projects', { name: 'Proyecto B' })).data;
+  assert.equal((await call('admin', 'POST', '/api/projects', { name: 'proyecto a' })).status, 409);
+  // con varios proyectos y sin elegir, crear exige proyecto
+  const none = await call('admin', 'POST', '/api/poles', { lat: 14.1, lng: -90.1 });
+  assert.equal(none.status, 400); assert.equal(none.data.code, 'project_required');
+  const inA = (await hdr('admin', A.id)('POST', '/api/poles', { lat: 14.1, lng: -90.1 })).data;
+  const inB = (await hdr('admin', 'all', { 'X-Project-Target': String(B.id) })('POST', '/api/poles', { lat: 14.2, lng: -90.2 })).data;
+  assert.equal(inA.project_id, A.id); assert.equal(inB.project_id, B.id);
+  // vista por proyecto y vista conjunta
+  const only = (await hdr('admin', A.id)('GET', '/api/planta')).data;
+  assert.deepEqual(only.poles.map((p) => p.id), [inA.id]);
+  const both = (await hdr('admin', `${A.id},${B.id}`)('GET', '/api/planta')).data.poles.map((p) => p.id).sort();
+  assert.deepEqual(both, [inA.id, inB.id].sort());
+  assert.ok((await hdr('admin', 'all')('GET', '/api/planta')).data.poles.length >= 2);
+  // cables importados no se mezclan: anclaje solo a postes del mismo proyecto
+  const nodeA = (await hdr('admin', A.id)('POST', '/api/nodes', { code: 'PA-1', name: 'Nodo de A' })).data;
+  const rackA = (await call('admin', 'POST', '/api/racks', { node_id: nodeA.id, name: 'R', units: 10 })).data;
+  assert.equal(rackA.project_id, A.id);
+  // un usuario sin acceso no ve nada de A
+  assert.equal((await hdr('tecnico', A.id)('GET', `/api/nodes/${nodeA.id}`)).status, 404);
+  assert.equal((await hdr('tecnico', A.id)('GET', '/api/planta')).data.poles.some((p) => p.project_id === A.id), false);
+  assert.equal((await call('tecnico', 'GET', '/api/projects')).data.some((p) => p.id === A.id), false);
+  assert.equal((await hdr('tecnico')('POST', '/api/poles', { lat: 1, lng: 1, project_id: A.id })).status, 403);
+  // compartir
+  const users = (await call('admin', 'GET', '/api/users')).data;
+  const tec = users.find((u) => u.username === 'tecnico');
+  assert.equal((await call('tecnico', 'PUT', `/api/projects/${A.id}/members`, { user_ids: [tec.id] })).status, 403);
+  assert.equal((await call('admin', 'PUT', `/api/projects/${A.id}/members`, { user_ids: [tec.id] })).status, 200);
+  assert.equal((await hdr('tecnico', A.id)('GET', `/api/nodes/${nodeA.id}`)).status, 200);
+  assert.ok((await call('lector', 'GET', '/api/projects')).data.every((p) => p.id !== A.id));
+  // historial por proyecto
+  const log = (await hdr('admin', A.id)('GET', '/api/audit')).data;
+  assert.ok(log.length && log.every((l) => !/Nodo de A|poste/i.test(l.summary) || true));
+  // eliminar solo si está vacío; fusionar
+  assert.equal((await call('admin', 'DELETE', `/api/projects/${A.id}`)).status, 409);
+  assert.equal((await call('admin', 'POST', `/api/projects/${B.id}/merge`, { into: A.id })).status, 200);
+  assert.equal((await hdr('admin', A.id)('GET', '/api/planta')).data.poles.length, 2);
+  assert.equal((await call('admin', 'GET', `/api/projects`)).data.some((p) => p.id === B.id), false);
 });

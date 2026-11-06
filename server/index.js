@@ -12,6 +12,8 @@ import { router as filesRouter, fileServer } from './routes/files.js';
 import { readVersion } from './version.js';
 import { router as importRouter } from './routes/import.js';
 import { router as templatesRouter } from './routes/templates.js';
+import { router as projectsRouter } from './routes/projects.js';
+import { scopeMiddleware } from './scope.js';
 
 export function createApp() {
   const app = express();
@@ -44,12 +46,14 @@ export function createApp() {
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, version: readVersion() }));
   app.use('/api', usersRouter);
-  app.use('/api', requireAuth, crudRouter);
-  app.use('/api', requireAuth, viewsRouter);
-  app.use('/api', requireAuth, filesRouter);
-  app.use('/api', requireAuth, importRouter);
-  app.use('/api', requireAuth, templatesRouter);
-  app.use('/files', fileServer);
+  app.use('/api', requireAuth, scopeMiddleware);
+  app.use('/api', projectsRouter);
+  app.use('/api', crudRouter);
+  app.use('/api', viewsRouter);
+  app.use('/api', filesRouter);
+  app.use('/api', importRouter);
+  app.use('/api', templatesRouter);
+  app.use('/files', requireAuth, scopeMiddleware, fileServer);
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 
   app.use(express.static(path.join(ROOT, 'public'), { extensions: ['html'], maxAge: '5m' }));
@@ -57,7 +61,7 @@ export function createApp() {
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, _req, res, _next) => {
-    if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+    if (err instanceof HttpError) return res.status(err.status).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
     if (err?.type === 'entity.too.large') return res.status(413).json({ error: 'Archivo demasiado grande' });
     if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'JSON inválido' });
     console.error(err);

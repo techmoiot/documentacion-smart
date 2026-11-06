@@ -1,7 +1,7 @@
 // Panel de inicio, listado de nodos y ficha de nodo
 import { api } from '../api.js';
 import { NODE_TYPE, DEVICE_TYPE, STATUS } from '../catalog.js';
-import {
+import { projectChip,
   h, btn, badge, icon, props, clear, can, guard, toast, confirmBox, openPanel, closePanel, emptyState, go, fmt, state,
 } from '../ui.js';
 import { nodeForm, deviceForm, deviceCard, filesWidget, historyList, showImpact, auditRow } from '../shared.js';
@@ -48,7 +48,7 @@ export async function nodesView(root) {
     for (const n of list) {
       const nt = NODE_TYPE[n.type] || NODE_TYPE.otro;
       cards.append(h('a', { class: 'card', href: `#/nodo/${n.id}`, style: { '--c': STATUS[n.status]?.color } },
-        h('div', { class: 'row gap' }, h('span', { class: 'chip', style: { '--c': nt.color } }, nt.label), badge(n.status)),
+        h('div', { class: 'row gap wrap' }, h('span', { class: 'chip', style: { '--c': nt.color } }, nt.label), badge(n.status), projectChip(n.project_id)),
         h('h3', { style: { marginTop: '8px' } }, n.name), h('div', { class: 'muted small' }, n.code),
         h('div', { class: 'muted small' }, n.address || (n.lat != null ? `${n.lat.toFixed(4)}, ${n.lng.toFixed(4)}` : 'Sin ubicación')),
         h('div', { class: 'meta' }, h('span', null, `${n.device_count} equipos`), h('span', null, `${n.antenna_count} antenas`))));
