@@ -169,6 +169,8 @@ Seleccione cualquier elemento (cable, splitter, NAP, cliente…) y use:
 - **Ruta desde el nodo**: resalta en el mapa el recorrido completo OLT → PON → ODF → cables → cajas/splitters → elemento, y lista cada tramo con longitud, pérdida y acumulado. Si el PON tiene «Potencia TX» calcula el **Rx estimado**.
 - **Hasta el final**: resalta todo lo que cuelga del elemento hasta los clientes, con la pérdida acumulada por rama.
 - **Diagrama de empalmes** (cajas NAP/CEO y splitters): cables que llegan y salen con sus hilos TIA-598, splitters 1:N y fusiones. Clic en un hilo y luego en otro para fusionarlos; clic en la fusión para quitarla. Los cables se asocian a la caja si empiezan/terminan sobre ella (trácelos haciendo clic en la caja) o por «Nace de».
+- **Splitters dentro de la caja**: botón «Agregar splitter» (en el panel de la caja o dentro del diagrama de empalmes); eligen relación 1:2…1:64, tipo y pérdida. Se dibujan como triángulos con su entrada y N salidas, no aparecen como punto en el mapa y se pueden quitar desde el diagrama.
+- **Fusiones en lote**: clic en el primer hilo, **Shift+clic** en el último del rango y clic en el hilo de destino: se fusionan en orden (hilo 2→salida 1, 3→2…). También «Fusión en lote…» (origen, destino, hilo inicial y cantidad; omite los puntos ya ocupados). Esc cancela la selección.
 
 La pérdida usa 0,35 dB/km, la pérdida de inserción de cada splitter (o la típica de su relación) y 0,1 dB por caja/ODF.
 

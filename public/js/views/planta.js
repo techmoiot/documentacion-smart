@@ -168,6 +168,10 @@ export async function plantaView(root, query = {}) {
     if (e.kind === 'cable' && e.path) {
       rows.push(['Longitud trazada', fmtM(pathLen(e.path))], ['Postes recorridos', String(new Set(e.path.filter((p) => p[2] != null).map((p) => p[2])).size)]);
     } else if (e.lat != null) rows.push(['Coordenadas', `${e.lat.toFixed(6)}, ${e.lng.toFixed(6)}`]);
+    if (['closure', 'nap'].includes(e.kind)) {
+      const inside = data.elements.filter((x) => x.kind === 'splitter' && x.parent_id === e.id);
+      if (inside.length) rows.push(['Splitters en la caja', inside.map((x) => `${x.name} (${x.props?.relacion || '?'})`).join(', ')]);
+    }
     const parent = e.parent_id ? elById().get(e.parent_id) : null;
     if (parent) rows.push(['Depende de', h('a', { href: '#', onclick: (ev) => { ev.preventDefault(); selectEl(parent.id); } }, parent.name)]);
     if (e.notes) rows.push(['Notas', e.notes]);
@@ -175,6 +179,7 @@ export async function plantaView(root, query = {}) {
       h('div', { class: 'row gap wrap', style: { margin: '10px 0' } },
         btn('Ruta desde el nodo', { ic: 'fiber', kind: 'primary', title: 'Resalta el recorrido de la fibra desde el nodo/OLT hasta este elemento', onClick: () => showTrace(e, 'up') }),
         btn('Hasta el final', { ic: 'fiber', title: 'Resalta todo lo que cuelga de este elemento hasta los clientes', onClick: () => showTrace(e, 'down') }),
+        ['closure', 'nap'].includes(e.kind) && can('write') ? btn('Agregar splitter', { ic: 'plus', title: 'Agrega un splitter dentro de esta caja', onClick: () => openSplice(e, data.elements, { onChanged: () => reload(), addSplitter: true }) }) : null,
         ['closure', 'nap', 'splitter'].includes(e.kind) ? btn('Diagrama de empalmes', { ic: 'edit', onClick: () => openSplice(e, data.elements, { onChanged: () => reload() }) }) : null,
         btn('Ver en árbol FTTH', { ic: 'fiber', onClick: () => go(`#/fibra?sel=${e.id}`) }),
         btn('Impacto', { ic: 'alert', onClick: () => showImpact('fiber', e.id) }),
