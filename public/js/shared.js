@@ -57,21 +57,37 @@ function portGroupsEditor() {
   };
 }
 
+// ---------- Plantillas personalizadas ----------
+export async function templatesManager() {
+  const list = h('div');
+  const m = modal({ title: 'Plantillas de equipos personalizadas', body: list, wide: false, actions: [btn('Cerrar', { onClick: () => m.close() })] });
+  async function refresh() {
+    const items = await guard(() => api.get('/api/device-templates')) || [];
+    clear(list);
+    if (!items.length) { list.append(h('p', { class: 'muted' }, 'Aún no hay plantillas. Al crear un equipo marque «Guardar como plantilla reutilizable».')); return; }
+    list.append(h('ul', { class: 'simple' }, items.map((t) => h('li', { class: 'row gap' },
+      h('span', { class: 'grow' }, h('strong', null, t.label), h('span', { class: 'muted small' }, ` · ${DEVICE_TYPE[t.type]?.label || t.type} · ${t.u}U · ${t.groups.reduce((n, g) => n + g.count, 0)} puertos`)),
+      can('write') ? btn('', { ic: 'trash', title: 'Eliminar plantilla', onClick: async () => { if (await confirmBox(`¿Eliminar la plantilla «${t.label}»? Los equipos ya creados no cambian.`)) { await guard(() => api.del(`/api/device-templates/${t.id}`)); refresh(); } } }) : null))));
+  }
+  refresh();
+}
+
 // ---------- Equipo ----------
-export async function deviceForm({ device = null, node_id = null, rack_id = null, rack_u = null } = {}) {
-  const [nodes, racks] = await Promise.all([api.get('/api/nodes'), api.get('/api/racks')]);
+export async function deviceForm({ device = null, node_id = null, rack_id = null, rack_u = null, rack_side = 'front' } = {}) {
+  const [nodes, racks, custom] = await Promise.all([api.get('/api/nodes'), api.get('/api/racks'), api.get('/api/device-templates')]);
+  const allTemplates = [...TEMPLATES, ...custom.map((t) => ({ id: `c:${t.id}`, label: `★ ${t.label}`, type: t.type, brand: t.brand, model: t.model, u: t.u, groups: t.groups }))];
   const pg = portGroupsEditor();
   const isNew = !device;
   const rackOptions = (nid) => [['', '— Sin rack —'], ...racks.filter((r) => String(r.node_id) === String(nid)).map((r) => [r.id, `${r.name} (${r.units}U)`])];
-  const values = device || { type: 'other', status: 'operativo', u_height: 1, node_id, rack_id, rack_u };
+  const values = device || { type: 'other', status: 'operativo', u_height: 1, node_id, rack_id, rack_u, rack_side };
   const fields = [];
   if (isNew) {
     fields.push({
       name: 'template', label: 'Plantilla de equipo', type: 'select', span: 2,
-      options: [['', '— Equipo personalizado —'], ...TEMPLATES.map((t) => [t.id, t.label])],
-      hint: 'Rellena tipo, marca, modelo, altura en U y puertos. Todo es editable.',
+      options: [['', '— Equipo personalizado (en blanco) —'], ...allTemplates.map((t) => [t.id, t.label])],
+      hint: 'Rellena tipo, marca, modelo, altura en U y puertos. Todo es editable; las plantillas con ★ son las suyas.',
       onChange: (sel, inputs) => {
-        const t = TEMPLATES.find((x) => x.id === sel.value);
+        const t = allTemplates.find((x) => x.id === sel.value);
         if (!t) return;
         inputs.type.el.value = t.type; inputs.brand.el.value = t.brand; inputs.model.el.value = t.model; inputs.u_height.el.value = t.u;
         if (!inputs.name.el.value) inputs.name.el.value = t.label;
@@ -96,22 +112,31 @@ export async function deviceForm({ device = null, node_id = null, rack_id = null
       },
     },
     { name: 'rack_id', label: 'Rack', type: 'select', options: rackOptions(values.node_id) },
+    { name: 'rack_side', label: 'Lado del rack', type: 'select', options: [['front', 'Frente'], ['rear', 'Atrás (posterior)'], ['both', 'Ambos lados (profundidad completa)']] },
     { name: 'rack_u', label: 'Posición U (unidad inferior que ocupa)', type: 'number', min: 1, max: 60 },
     { name: 'u_height', label: 'Altura (U)', type: 'number', min: 1, max: 20, required: true },
     { name: 'location', label: 'Ubicación física (si no está en rack)', span: 2 },
     { name: 'notes', label: 'Notas técnicas', type: 'textarea' },
   );
-  if (isNew) fields.push({ name: 'port_groups', label: 'Puertos del equipo', type: 'custom', render: () => { pg.set([]); return pg; } });
+  if (isNew) fields.push({ name: 'port_groups', label: 'Puertos del equipo', type: 'custom', render: () => { pg.set([]); return pg; } },
+    { name: 'save_template', label: 'Guardar como plantilla reutilizable (con su tipo, marca, modelo, altura y puertos)', type: 'checkbox', span: 2 });
   const v = await formModal({ title: isNew ? 'Nuevo equipo' : `Editar equipo · ${device.name}`, fields, values, wide: true });
   if (!v) return null;
   const body = { ...v };
+  const saveTpl = body.save_template; delete body.save_template;
   delete body.template; delete body.section1;
   body.node_id = body.node_id === '' ? null : Number(body.node_id);
   body.rack_id = body.rack_id === '' ? null : Number(body.rack_id);
   body.rack_u = body.rack_id ? Number(body.rack_u) || null : null;
   body.u_height = Number(body.u_height) || 1;
   if (!isNew) delete body.port_groups;
-  return guard(() => (isNew ? api.post('/api/devices', body) : api.patch(`/api/devices/${device.id}`, body)));
+  const saved = await guard(() => (isNew ? api.post('/api/devices', body) : api.patch(`/api/devices/${device.id}`, body)));
+  if (saved && isNew && saveTpl) {
+    const label = [body.brand, body.model].filter(Boolean).join(' ') || body.name;
+    const ok = await guard(() => api.post('/api/device-templates', { label, type: body.type, brand: body.brand, model: body.model, u: body.u_height, groups: pg.get() }));
+    if (ok) toast(`Plantilla «${label}» guardada`);
+  }
+  return saved;
 }
 
 export async function addPortsForm(device) {
@@ -338,7 +363,7 @@ export function deviceCard(d, { onChanged, onFocus } = {}) {
     props([
       ['Marca / modelo', [d.brand, d.model].filter(Boolean).join(' ')], ['Número de serie', d.serial], ['Dirección IP', d.ip], ['Dirección MAC', d.mac],
       ['Firmware / SO', d.firmware], ['Nodo', d.node ? h('a', { class: 'link', href: `#/nodo/${d.node.id}` }, `${d.node.name}`) : d.node_id ? h('a', { class: 'link', href: `#/nodo/${d.node_id}` }, 'Ver nodo') : null],
-      ['Rack / posición', d.rack ? `${d.rack.name} · U${d.rack_u}${d.u_height > 1 ? `–U${d.rack_u + d.u_height - 1}` : ''}` : d.rack_id ? `U${d.rack_u}` : d.location || 'Sin rack'],
+      ['Rack / posición', d.rack ? `${d.rack.name} · U${d.rack_u}${d.u_height > 1 ? `–U${d.rack_u + d.u_height - 1}` : ''}${d.rack_side === 'rear' ? ' · atrás' : d.rack_side === 'both' ? ' · frente y atrás' : ''}` : d.rack_id ? `U${d.rack_u}` : d.location || 'Sin rack'],
       ['Instalación', fmt.date(d.installed_at)], ['Puertos', ports.length ? `${used} en uso / ${ports.length}` : 'Sin puertos'], ['Notas', d.notes],
     ]),
     h('div', { class: 'row gap wrap' },

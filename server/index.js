@@ -11,6 +11,7 @@ import { router as viewsRouter } from './routes/views.js';
 import { router as filesRouter, fileServer } from './routes/files.js';
 import { readVersion } from './version.js';
 import { router as importRouter } from './routes/import.js';
+import { router as templatesRouter } from './routes/templates.js';
 
 export function createApp() {
   const app = express();
@@ -47,6 +48,7 @@ export function createApp() {
   app.use('/api', requireAuth, viewsRouter);
   app.use('/api', requireAuth, filesRouter);
   app.use('/api', requireAuth, importRouter);
+  app.use('/api', requireAuth, templatesRouter);
   app.use('/files', fileServer);
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 

@@ -155,3 +155,22 @@ test('importación KMZ/KML: vista previa, mapeo, anclaje a postes y duplicados',
   assert.equal(again.poles, 0); assert.equal(again.cables, 0); assert.equal(again.duplicates, 2);
   assert.equal((await call('admin', 'POST', '/api/import/kmz/commit', { token: prev2.token, mapping })).status, 400);
 });
+
+test('rack: frente y atrás son independientes; plantillas personalizadas', async () => {
+  const n = (await call('admin', 'POST', '/api/nodes', { code: 'R-1', name: 'N rack' })).data;
+  const rk = (await call('admin', 'POST', '/api/racks', { node_id: n.id, name: 'RK', units: 10 })).data;
+  const mk = (name, side, u = 3) => call('admin', 'POST', '/api/devices', { name, rack_id: rk.id, rack_u: u, node_id: n.id, rack_side: side });
+  const front = await mk('F', 'front');
+  assert.equal(front.status, 201);
+  assert.equal((await mk('R', 'rear')).status, 201);            // misma U, otro lado
+  assert.equal((await mk('F2', 'front')).status, 409);          // mismo lado: choca
+  assert.equal((await mk('B', 'both')).status, 409);            // ambos lados choca con los dos
+  assert.equal((await mk('B2', 'both', 6)).status, 201);
+  assert.equal((await mk('R2', 'rear', 6)).status, 409);        // choca con el de ambos lados
+  assert.equal((await call('admin', 'PATCH', `/api/devices/${front.data.id}`, { rack_side: 'lado' })).status, 400);
+  const t = await call('admin', 'POST', '/api/device-templates', { label: 'Mi router', type: 'router', u: 1, groups: [{ kind: 'rj45', prefix: 'ether', count: 4, start: 1 }, { kind: 'x', count: 0 }] });
+  assert.equal(t.status, 201); assert.equal(t.data.groups.length, 1);
+  assert.equal((await call('lector', 'POST', '/api/device-templates', { label: 'x', groups: [] })).status, 403);
+  assert.equal((await call('lector', 'GET', '/api/device-templates')).data.length, 1);
+  assert.equal((await call('admin', 'DELETE', `/api/device-templates/${t.data.id}`)).status, 200);
+});

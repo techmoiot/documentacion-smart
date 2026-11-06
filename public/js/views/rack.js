@@ -63,6 +63,9 @@ export async function rackView(root, node, rackId, query = {}) {
   let rack = null;
   let selDevice = null, selPort = null, selConn = null, showAll = false;
   let unmounted = [];
+  let side = query.side === 'rear' ? 'rear' : 'front';   // lado visible del rack
+  const onSide = (d) => (d.rack_side || 'front') === 'both' || (d.rack_side || 'front') === side;
+  const applySide = () => { rack.devices = rack.all.filter(onSide); };
 
   const svg = s('svg', { class: 'canvas', role: 'img', 'aria-label': 'Vista frontal del rack' });
   const ctrl = panZoom(svg, { min: 0.3, max: 8 });
@@ -87,7 +90,7 @@ export async function rackView(root, node, rackId, query = {}) {
 
   async function load() {
     const [r, devs] = await Promise.all([api.get(`/api/racks/${activeId}/full`), api.get(`/api/devices?node_id=${node.id}`)]);
-    rack = r;
+    rack = r; rack.all = r.devices; applySide();
     unmounted = devs.filter((d) => !d.rack_id);
     renderToolbarActions();
     renderUnmounted();
@@ -106,9 +109,17 @@ export async function rackView(root, node, rackId, query = {}) {
           if (await guard(() => api.del(`/api/racks/${rack.id}`))) { toast('Rack eliminado'); go(`#/nodo/${node.id}/rack`); }
         } }));
     }
+    const sideBtn = (key, label) => h('button', { class: `btn ${side === key ? 'on' : ''}`, type: 'button', title: key === 'front' ? 'Ver el frente del rack' : 'Ver la parte posterior del rack', onclick: () => setSide(key) }, label);
+    box.append(h('div', { class: 'seg' }, sideBtn('front', 'Frente'), sideBtn('rear', 'Atrás')));
     const viewBtn = h('button', { class: 'btn', type: 'button', title: 'Alternar entre la zona ocupada y el rack completo', onclick: () => { fullView = !fullView; viewBtn.classList.toggle('on', fullView); fitAll(); } }, icon('rack', 15), h('span', null, 'Rack completo'));
     box.append(viewBtn, cablesBtn, zoomToolbar(Object.assign(ctrl, { refit: fitAll })));
     toolbar.append(box);
+  }
+
+  function setSide(key) {
+    if (side === key) return;
+    side = key; selDevice = null; selPort = null; selConn = null; closePanel(true);
+    applySide(); renderToolbarActions(); svg.setAttribute('aria-label', side === 'rear' ? 'Vista posterior del rack' : 'Vista frontal del rack'); draw(); fitAll();
   }
 
   function renderUnmounted() {
@@ -146,7 +157,8 @@ export async function rackView(root, node, rackId, query = {}) {
 
     // Bastidor
     scene.append(
-      s('rect', { x: NUM_W, y: 0, width: INNER + RAIL * 2, height: totalH, rx: 6, fill: '#0c1424', stroke: '#334155', 'stroke-width': 2 }),
+      s('text', { x: NUM_W + (INNER + RAIL * 2) / 2, y: 14, 'text-anchor': 'middle', class: 'unum', fill: side === 'rear' ? '#f59e0b' : '#64748b', 'font-weight': 700 }, side === 'rear' ? 'VISTA POSTERIOR (ATRÁS)' : 'VISTA FRONTAL'),
+      s('rect', { x: NUM_W, y: 0, width: INNER + RAIL * 2, height: totalH, rx: 6, fill: side === 'rear' ? '#14110a' : '#0c1424', stroke: side === 'rear' ? '#78561a' : '#334155', 'stroke-width': 2 }),
       s('rect', { x: X0, y: TOP, width: INNER, height: rack.units * UH, fill: '#070d1a' }));
 
     const occupied = new Set();
@@ -362,6 +374,8 @@ export async function rackView(root, node, rackId, query = {}) {
   }
 
   function gotoRemote(link) {
+    const rdAll = rack.all.find((x) => x.id === link.remote_device_id);
+    if (rdAll && !onSide(rdAll)) setSide(rdAll.rack_side === 'rear' ? 'rear' : 'front');
     const rd = rack.devices.find((x) => x.id === link.remote_device_id);
     if (rd) { selectPort(link.remote_port_id, rd.id, { focus: true }); return; }
     if (link.remote_node_id && link.remote_rack_id) go(`#/nodo/${link.remote_node_id}/rack/${link.remote_rack_id}?device=${link.remote_device_id}&port=${link.remote_port_id || ''}`);
@@ -375,7 +389,7 @@ export async function rackView(root, node, rackId, query = {}) {
   }
 
   async function addDevice(u) {
-    const created = await deviceForm({ node_id: node.id, rack_id: activeId, rack_u: u });
+    const created = await deviceForm({ node_id: node.id, rack_id: activeId, rack_u: u, rack_side: side });
     if (created) { toast('Equipo agregado'); await load(); selectDevice(created.id); }
   }
 
@@ -383,6 +397,8 @@ export async function rackView(root, node, rackId, query = {}) {
   requestAnimationFrame(() => {
     fitAll();
     const dId = Number(query.device), pId = Number(query.port);
+    const target = rack.all.find((d) => d.id === dId);
+    if (target && !onSide(target)) setSide(target.rack_side);
     if (dId && rack.devices.some((d) => d.id === dId)) {
       if (pId) selectPort(pId, dId, { focus: true }); else selectDevice(dId, { focus: true });
     }

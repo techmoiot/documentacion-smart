@@ -246,3 +246,6 @@ table.t tbody tr { cursor: pointer; } table.t tbody tr:hover { background: #1523
 
 .leaflet-control-layers { background: #0e1830f5; color: var(--text); border: 1px solid var(--line); border-radius: 10px; box-shadow: none; }
 .leaflet-control-layers-expanded { padding: 8px 12px; } .leaflet-control-layers label { font-size: 13px; margin: 3px 0; }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg .btn { border: 0; border-radius: 0; }

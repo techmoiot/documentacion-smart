@@ -90,6 +90,7 @@ const g = (kind, prefix, count, speed = '', start = 1) => ({ kind, prefix, count
 // Plantillas orientativas: ajuste puertos y U al equipo real antes de guardar.
 export const TEMPLATES = [
   { id: 'ccr2004', label: 'MikroTik CCR2004-1G-12S+2XS', type: 'router', brand: 'MikroTik', model: 'CCR2004-1G-12S+2XS', u: 1, groups: [g('rj45', 'ether', 1, '1G'), g('sfp+', 'SFP+', 12, '10G'), g('sfp28', 'SFP28-', 2, '25G'), g('console', 'console', 1)] },
+  { id: 'ccr1036-12g-2s', label: 'MikroTik CCR1036-12G-2S', type: 'router', brand: 'MikroTik', model: 'CCR1036-12G-2S', u: 1, groups: [g('rj45', 'ether', 12, '1G'), g('sfp', 'sfp', 2, '1G'), g('console', 'console', 1)] },
   { id: 'ccr2116', label: 'MikroTik CCR2116-12G-4S+', type: 'router', brand: 'MikroTik', model: 'CCR2116-12G-4S+', u: 1, groups: [g('rj45', 'ether', 12, '1G'), g('sfp+', 'SFP+', 4, '10G'), g('console', 'console', 1)] },
   { id: 'rb5009', label: 'MikroTik RB5009UG+S+IN', type: 'router', brand: 'MikroTik', model: 'RB5009UG+S+IN', u: 1, groups: [g('rj45', 'ether', 8, '1G'), g('sfp+', 'SFP+', 1, '10G')] },
   { id: 'router-gen', label: 'Router genérico', type: 'router', brand: '', model: '', u: 1, groups: [g('rj45', 'ether', 8, '1G'), g('sfp+', 'SFP+', 2, '10G')] },

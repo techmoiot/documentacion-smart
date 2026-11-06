@@ -4,7 +4,7 @@ import { STATUS, DEVICE_TYPE, LOGICAL } from '../catalog.js';
 import {
   h, btn, badge, icon, clear, can, guard, toast, confirmBox, formModal, openPanel, closePanel, emptyState, go, fmt, debounce, download, csvCell, state, ROLE_LABEL,
 } from '../ui.js';
-import { deviceForm, deviceCard, connectionForm, connectionCard, auditRow, entityLabel } from './../shared.js';
+import { deviceForm, templatesManager, deviceCard, connectionForm, connectionCard, auditRow, entityLabel } from './../shared.js';
 
 // ---------- Inventario ----------
 export async function inventoryView(root, query = {}) {
@@ -49,6 +49,7 @@ export async function inventoryView(root, query = {}) {
   root.append(h('div', { class: 'page' },
     h('div', { class: 'page-head' }, h('h2', null, 'Inventario de equipos'), count, h('span', { class: 'grow' }),
       btn('Exportar CSV', { ic: 'download', onClick: exportCsv }),
+      btn('Plantillas', { ic: 'rack', title: 'Plantillas de equipos personalizadas', onClick: () => templatesManager() }),
       can('write') ? btn('Nuevo equipo', { ic: 'plus', kind: 'primary', onClick: async () => { if (await deviceForm()) go(location.hash); } }) : null),
     h('div', { class: 'filters' }, q, fNode, fType, fStatus),
     h('div', { class: 'table-wrap' }, h('table', { class: 't' }, h('thead', null, h('tr', null, ['Nombre', 'Tipo', 'Marca / modelo', 'N.º de serie', 'IP', 'MAC', 'Nodo', 'Ubicación', 'Estado'].map((c) => h('th', null, c)))), tbody))));

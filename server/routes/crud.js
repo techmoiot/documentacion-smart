@@ -67,10 +67,13 @@ function validateRackPlacement(data, current) {
   if (merged.rack_u == null) throw bad('Indique la posición U dentro del rack');
   const bottom = merged.rack_u, top = merged.rack_u + (merged.u_height || 1) - 1;
   if (bottom < 1 || top > rack.units) throw bad(`El equipo no cabe: el rack tiene ${rack.units} U (ocuparía U${bottom}–U${top})`);
-  const others = all('SELECT id, name, rack_u, u_height FROM devices WHERE rack_id = ? AND id <> ?', rack.id, current?.id ?? -1);
+  const side = merged.rack_side || 'front';
+  const others = all('SELECT id, name, rack_u, u_height, rack_side FROM devices WHERE rack_id = ? AND id <> ?', rack.id, current?.id ?? -1);
   for (const o of others) {
+    const os = o.rack_side || 'front';
+    if (side !== 'both' && os !== 'both' && side !== os) continue; // frente y atrás son independientes
     const ob = o.rack_u, ot = o.rack_u + o.u_height - 1;
-    if (bottom <= ot && top >= ob) throw conflict(`La posición se solapa con "${o.name}" (U${ob}–U${ot})`);
+    if (bottom <= ot && top >= ob) throw conflict(`La posición se solapa con "${o.name}" (U${ob}–U${ot}, ${os === 'both' ? 'frente y atrás' : os === 'rear' ? 'atrás' : 'frente'})`);
   }
   data.node_id = rack.node_id; // el equipo pertenece al nodo del rack
 }
@@ -209,7 +212,7 @@ function mount(entity, path = entity) {
 
     // Los técnicos solo actualizan datos: no pueden reubicar ni reestructurar.
     if (req.user.role === 'technician') {
-      const structural = ['lat', 'lng', 'path', 'node_id', 'rack_id', 'rack_u', 'u_height', 'a_device_id', 'b_device_id', 'a_port_id', 'b_port_id', 'parent_id', 'a_antenna_id', 'b_antenna_id', 'layer', 'kind', 'units'];
+      const structural = ['lat', 'lng', 'path', 'node_id', 'rack_id', 'rack_u', 'u_height', 'rack_side', 'a_device_id', 'b_device_id', 'a_port_id', 'b_port_id', 'parent_id', 'a_antenna_id', 'b_antenna_id', 'layer', 'kind', 'units'];
       if (structural.some((k) => k in data && data[k] !== current[k])) {
         throw new HttpError(403, 'Su rol permite actualizar datos, no modificar la estructura (ubicación o conexiones)');
       }

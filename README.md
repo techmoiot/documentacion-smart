@@ -146,3 +146,8 @@ En **Planta externa → Importar KMZ / KML** suba el archivo exportado de OZmap 
 ## Torres y antenas
 
 En **Radioenlaces**: *Nueva torre* (nombre, código, estructura, altura, GPS, responsable) y, en la ficha de cada torre (clic en su cabecera del diagrama), *Agregar antena* con el nodo ya seleccionado. Una torre sin antenas aparece igualmente en el diagrama con «+ Agregar antenas». Cada antena guarda altura, azimut, frecuencia, etc., y se enlaza con otras en *Nuevo radioenlace*.
+
+## Equipos personalizados y racks por ambos lados
+
+- **Plantillas**: al crear un equipo elija una plantilla (incluye `MikroTik CCR1036-12G-2S`: 12 × ether Gigabit, 2 × SFP, consola) o parta en blanco y defina tipo, marca, modelo, altura en U y grupos de puertos a su medida. Marque *Guardar como plantilla reutilizable* y aparecerá con ★ en la lista; se administran en **Inventario → Plantillas**.
+- **Frente / Atrás**: cada equipo se monta en el *frente*, la parte *posterior* o *ambos lados* (profundidad completa). En la vista del rack, el selector **Frente | Atrás** alterna la cara; las U de cada lado son independientes (puede haber un equipo al frente y otro atrás en la misma U) salvo los de ambos lados, que ocupan las dos.

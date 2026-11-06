@@ -229,6 +229,13 @@ const MIGRATIONS = [
   // 2-3: datos de torre / estructura en los nodos
   'ALTER TABLE nodes ADD COLUMN height_m REAL',
   "ALTER TABLE nodes ADD COLUMN structure TEXT DEFAULT ''",
+  // 4: lado del rack en que se monta el equipo (front | rear | both)
+  "ALTER TABLE devices ADD COLUMN rack_side TEXT NOT NULL DEFAULT 'front'",
+  // 5: plantillas de equipo personalizadas
+  `CREATE TABLE IF NOT EXISTS device_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'other',
+    brand TEXT DEFAULT '', model TEXT DEFAULT '', u INTEGER NOT NULL DEFAULT 1, groups TEXT NOT NULL DEFAULT '[]',
+    created_by TEXT DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')))`,
 ];
 {
   const current = db.prepare('PRAGMA user_version').get().user_version;
