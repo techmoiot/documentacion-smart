@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { STATUS, NODE_TYPE, cableColor } from '../catalog.js';
 import { h, btn, icon, clear, go, state, haversineKm, fmtKm, badge } from '../ui.js';
 import { showImpact } from '../shared.js';
+import { addBaseMaps } from '../basemaps.js';
 import { showLinkModal } from './radio.js';
 
 const L = window.L;
@@ -11,15 +12,14 @@ const sc = (st) => STATUS[st]?.color || '#94a3b8';
 export async function mapView(root, query = {}) {
   clear(root);
   const data = await api.get('/api/map');
-  const dark = localStorage.getItem('sd_map_dark') !== '0';
 
   const ctl = h('div', { class: 'map-ctl' });
   const mapEl = h('div', { id: 'map' });
-  const wrap = h('div', { class: `map-wrap ${dark ? 'map-dark' : ''}` }, mapEl, ctl);
+  const wrap = h('div', { class: 'map-wrap' }, mapEl, ctl);
   root.append(h('div', { class: 'page fill' }, wrap));
 
   const map = L.map(mapEl, { zoomControl: true, preferCanvas: false }).setView([14.6349, -90.5069], 11);
-  L.tileLayer(state.meta.tileUrl, { maxZoom: 19, attribution: state.meta.tileAttribution, referrerPolicy: 'strict-origin-when-cross-origin' }).addTo(map);
+  addBaseMaps(map);
   L.control.scale({ imperial: false }).addTo(map);
 
   const layers = { nodes: L.layerGroup().addTo(map), links: L.layerGroup().addTo(map), fiber: L.layerGroup().addTo(map), naps: L.layerGroup().addTo(map), poles: L.layerGroup(), clients: L.layerGroup(), nodeLinks: L.layerGroup().addTo(map), measure: L.layerGroup().addTo(map) };
@@ -149,8 +149,7 @@ export async function mapView(root, query = {}) {
     h('h5', null, 'Estado de enlaces'), ...Object.values(STATUS).map((o) => h('div', { class: 'small', style: { display: 'flex', gap: '8px', alignItems: 'center' } }, h('span', { class: 'dotc', style: { background: o.color } }), o.label)),
     h('h5', null, 'Herramientas'),
     h('div', { class: 'row gap wrap' }, measureBtn,
-      btn('Ajustar', { ic: 'fit', onClick: fit }),
-      btn(dark ? 'Mapa claro' : 'Mapa oscuro', { onClick: () => { localStorage.setItem('sd_map_dark', dark ? '0' : '1'); go(location.hash); } })));
+      btn('Ajustar', { ic: 'fit', onClick: fit })));
 
   function fit() {
     const all = [...placed.map((n) => [n.lat, n.lng])];

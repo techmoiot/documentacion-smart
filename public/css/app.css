@@ -190,7 +190,7 @@ table.t tbody tr { cursor: pointer; } table.t tbody tr:hover { background: #1523
 
 /* Mapa */
 #map { height: 100%; width: 100%; background: #0a111f; } .leaflet-container { font: inherit; }
-.map-dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.92) saturate(.7); }
+.tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.92) saturate(.7); }
 .map-wrap { position: relative; flex: 1; min-height: 400px; }
 .map-ctl { position: absolute; top: 12px; left: 58px; z-index: 1000; background: #0e1830ee; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; width: 232px; max-height: calc(100% - 24px); overflow: auto; }
 .map-ctl h5 { margin: 10px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); } .map-ctl label { display: flex; align-items: center; gap: 8px; padding: 2px 0; cursor: pointer; font-size: 13px; }
@@ -243,4 +243,6 @@ table.t tbody tr { cursor: pointer; } table.t tbody tr:hover { background: #1523
 .emark { width: 22px; height: 22px; border-radius: 6px; background: var(--c); border: 2px solid #0a1322; color: #04101f; font: 700 11px system-ui; display: grid; place-items: center; box-shadow: 0 0 0 1px #000a; }
 .emark.round { border-radius: 50%; } .vmark { width: 12px; height: 12px; border-radius: 50%; background: #facc15; border: 2px solid #422006; cursor: move; }
 .leaflet-container.drawing { cursor: crosshair !important; }
-.sat-on .leaflet-tile-pane { filter: none !important; }
+
+.leaflet-control-layers { background: #0e1830f5; color: var(--text); border: 1px solid var(--line); border-radius: 10px; box-shadow: none; }
+.leaflet-control-layers-expanded { padding: 8px 12px; } .leaflet-control-layers label { font-size: 13px; margin: 3px 0; }

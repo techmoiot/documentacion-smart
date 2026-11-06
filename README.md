@@ -126,7 +126,7 @@ Menú **Planta externa** (`#/planta`):
 - **Cables**: herramienta *Cable de fibra* → clic sobre postes (se ajustan solos) o puntos libres; doble clic para terminar. Guarda trazado, longitud, número de hilos y el elemento del que nace (OLT, splitter, caja, otro cable). Se puede **editar el trazado** (arrastrar vértices, clic en la línea para añadir, doble clic para quitar).
 - **Cajas y clientes**: NAP, cajas de empalme/distribución, splitters y clientes se colocan en el mapa; si caen sobre un poste quedan vinculados a él. Todo se puede arrastrar para reubicar.
 - **Hilos**: cada cable muestra sus hilos con el código de colores TIA-598 (tubo y color); marque cada hilo como libre/usado/reservado/dañado y a qué PON, splitter o cliente está asignado.
-- Vista **satelital** (Esri; configurable con `SAT_TILE_URL`) para ubicar postes. Los cables y postes también aparecen en el **Mapa** general.
+- Selector de **mapa base** (arriba a la derecha): Calles, Satélite, Híbrido, Relieve, Topográfico y Oscuro; recuerda su elección y aplica también al Mapa general. Satélite configurable con `SAT_TILE_URL`. Los cables y postes aparecen también en el **Mapa** general.
 - Los elementos siguen formando el árbol FTTH: *Ver en árbol* e *Impacto* funcionan igual.
 
 ## Importar desde OZmap (KMZ / KML)

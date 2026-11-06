@@ -4,6 +4,7 @@ import { STATUS, FIBER_KIND, FIBER_PROPS, POLE_MATERIAL, cableColor } from '../c
 import { h, btn, clear, go, state, can, haversineKm, fmtKm, badge, props, openPanel, closePanel, formModal, confirmBox, guard, toast } from '../ui.js';
 import { filesWidget, historyList, showImpact } from '../shared.js';
 import { strandsEditor } from '../strands.js';
+import { addBaseMaps } from '../basemaps.js';
 import { importKmzWizard } from './import-kmz.js';
 
 const L = window.L;
@@ -17,7 +18,6 @@ export async function plantaView(root, query = {}) {
   clear(root);
   let data = await api.get('/api/planta');
   const editable = can('write');
-  const sat = localStorage.getItem('sd_map_sat') === '1';
 
   const mapEl = h('div', { id: 'map' });
   const ctl = h('div', { class: 'tool-ctl' });
@@ -26,9 +26,7 @@ export async function plantaView(root, query = {}) {
   root.append(h('div', { class: 'page fill' }, wrap));
 
   const map = L.map(mapEl, { zoomControl: true, doubleClickZoom: false }).setView([14.6349, -90.5069], 16);
-  const osm = L.tileLayer(state.meta.tileUrl, { maxZoom: 20, maxNativeZoom: 19, attribution: state.meta.tileAttribution, referrerPolicy: 'strict-origin-when-cross-origin' });
-  const satL = L.tileLayer(state.meta.satUrl, { maxZoom: 20, maxNativeZoom: 19, attribution: state.meta.satAttribution, referrerPolicy: 'strict-origin-when-cross-origin' });
-  (sat ? satL : osm).addTo(map);
+  addBaseMaps(map, { maxNative: 19 });
   L.control.scale({ imperial: false }).addTo(map);
 
   const G = { cables: L.layerGroup().addTo(map), poles: L.layerGroup().addTo(map), els: L.layerGroup().addTo(map), draft: L.layerGroup().addTo(map), edit: L.layerGroup().addTo(map) };
@@ -360,8 +358,6 @@ export async function plantaView(root, query = {}) {
   ctl.append(h('h5', null, 'Capas'), toggle('Cables', G.cables), toggle('Postes', G.poles), toggle('Cajas y clientes', G.els),
     editable ? h('h5', null, 'Migración') : null,
     editable ? btn('Importar KMZ / KML', { ic: 'plus', onClick: () => importKmzWizard({ onDone: () => go(location.hash) }) }) : null,
-    h('h5', null, 'Mapa base'),
-    btn(sat ? 'Vista de calles' : 'Vista satelital', { onClick: () => { localStorage.setItem('sd_map_sat', sat ? '0' : '1'); go(location.hash); } }),
     btn('Ajustar a la planta', { ic: 'fit', onClick: fit }),
     h('h5', null, 'Leyenda'),
     ...[['≤12 hilos', cableColor(12)], ['13–48', cableColor(24)], ['49–96', cableColor(72)], ['>96', cableColor(144)]].map(([l, c]) => h('div', { class: 'small', style: { display: 'flex', gap: '8px', alignItems: 'center' } }, h('span', { class: 'dotc', style: { background: c } }), l)));
