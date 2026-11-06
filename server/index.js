@@ -71,5 +71,5 @@ if (isMain) {
   const app = createApp();
   const n = get('SELECT COUNT(*) AS n FROM users').n;
   if (n === 0) console.warn('⚠ No hay usuarios. Cree un administrador con:  document create-admin <usuario>');
-  app.listen(PORT, HOST, () => console.log(`Smart Connection · Documentación de red escuchando en http://${HOST}:${PORT}`));
+  app.listen(PORT, HOST, () => console.log(`Topos · Documentación de red escuchando en http://${HOST}:${PORT}`));
 }

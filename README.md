@@ -1,4 +1,4 @@
-# Smart Connection · Documentación visual de infraestructura de red
+# Topos · Documentación visual de infraestructura de red (Smart Connection)
 
 Plataforma web para documentar, visualizar y administrar toda la infraestructura de red de Smart Connection:
 nodos y torres, **racks con equipos por U y puertos**, **fibra óptica FTTH** (OLT → PON → ODF → cable → splitter → NAP → cliente),

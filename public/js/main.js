@@ -21,7 +21,7 @@ function showLogin(message = '') {
   const pass = h('input', { type: 'password', name: 'password', autocomplete: 'current-password', required: true });
   const form = h('form', { class: 'login-box' },
     h('div', { class: 'logo-tile' }, h('img', { src: '/img/logo.png', alt: 'Techmo · For engineers, by engineers' })),
-    h('div', { class: 'login-title' }, 'Smart Connection', h('small', null, 'Documentación de infraestructura de red')),
+    h('div', { class: 'login-title' }, 'Topos', h('small', null, 'Documentación de infraestructura de red · Smart Connection')),
     h('div', null, h('label', null, 'Usuario'), user), h('div', null, h('label', null, 'Contraseña'), pass), err,
     h('button', { class: 'btn primary', type: 'submit', style: { justifyContent: 'center' } }, 'Ingresar'));
   form.addEventListener('submit', async (e) => {
@@ -45,7 +45,7 @@ let mainEl = null;
 function buildShell() {
   clear(app);
   const nav = h('nav', { class: 'nav', 'aria-label': 'Navegación principal' },
-    h('div', { class: 'brand' }, h('div', { class: 'logo img' }, h('img', { src: '/img/logo.png', alt: 'Techmo' })), h('div', null, 'Smart Connection', h('small', null, 'Red documentada'))),
+    h('div', { class: 'brand' }, h('div', { class: 'logo img' }, h('img', { src: '/img/logo.png', alt: 'Techmo' })), h('div', null, 'Topos', h('small', null, 'Smart Connection'))),
     NAV.map(([href, label, ic]) => h('a', { href, 'data-nav': href }, icon(ic, 17), h('span', null, label))),
     state.user.role === 'admin' ? h('a', { href: '#/usuarios', 'data-nav': '#/usuarios' }, icon('users', 17), h('span', null, 'Usuarios')) : null,
     h('div', { class: 'spacer' }),
@@ -114,8 +114,8 @@ async function route() {
     const k = el.dataset.nav.replace('#/', '');
     el.classList.toggle('active', k === section || (k === 'nodos' && section === 'nodo') || (k === '' && section === ''));
   });
-  document.getElementById('crumbs').replaceChildren(h('b', null, TITLES[section] || 'Smart Connection'));
-  document.title = `${TITLES[section] || 'Documentación'} · Smart Connection`;
+  document.getElementById('crumbs').replaceChildren(h('b', null, TITLES[section] || 'Topos'));
+  document.title = `${TITLES[section] || 'Documentación'} · Topos`;
   const view = h('div', { style: { height: (section === 'mapa' || section === 'planta') ? '100%' : null } });
   mainEl.replaceChildren(view);
   mainEl.scrollTop = 0;

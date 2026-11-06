@@ -16,7 +16,7 @@ export async function homeView(root) {
   const stat = (n, label, href) => h('a', { class: 'stat', href }, h('b', null, n), h('span', null, label));
   const hrefFor = { nodo: (p) => `#/nodo/${p.id}`, equipo: (p) => `#/inventario?device=${p.id}`, radioenlace: (p) => `#/radioenlaces?link=${p.id}`, fibra: (p) => `#/fibra?sel=${p.id}` };
   root.append(h('div', { class: 'page' },
-    h('div', { class: 'page-head' }, h('h2', null, 'Visión general de la red'), h('span', { class: 'muted' }, 'Smart Connection')),
+    h('div', { class: 'page-head' }, h('h2', null, 'Visión general de la red'), h('span', { class: 'muted' }, 'Topos · Smart Connection')),
     h('div', { class: 'stats' },
       stat(st.nodes, 'Nodos y sitios', '#/nodos'), stat(st.racks, 'Racks', '#/nodos'), stat(st.devices, 'Equipos', '#/inventario'), stat(st.ports, 'Puertos documentados', '#/inventario'),
       stat(st.connections, 'Conexiones', '#/conexiones'), stat(st.antennas, 'Antenas', '#/radioenlaces'), stat(st.radiolinks, 'Radioenlaces', '#/radioenlaces'),
