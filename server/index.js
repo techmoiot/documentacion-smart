@@ -9,6 +9,8 @@ import { router as usersRouter } from './routes/users.js';
 import { router as crudRouter } from './routes/crud.js';
 import { router as viewsRouter } from './routes/views.js';
 import { router as filesRouter, fileServer } from './routes/files.js';
+import { readVersion } from './version.js';
+import { router as importRouter } from './routes/import.js';
 
 export function createApp() {
   const app = express();
@@ -44,6 +46,7 @@ export function createApp() {
   app.use('/api', requireAuth, crudRouter);
   app.use('/api', requireAuth, viewsRouter);
   app.use('/api', requireAuth, filesRouter);
+  app.use('/api', requireAuth, importRouter);
   app.use('/files', fileServer);
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 
@@ -61,9 +64,7 @@ export function createApp() {
   return app;
 }
 
-export function readVersion() {
-  try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; } catch { return 'dev'; }
-}
+export { readVersion };
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname);
 if (isMain) {

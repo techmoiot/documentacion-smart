@@ -48,7 +48,8 @@ function buildShell() {
     h('div', { class: 'brand' }, h('div', { class: 'logo img' }, h('img', { src: '/img/logo.png', alt: 'Techmo' })), h('div', null, 'Smart Connection', h('small', null, 'Red documentada'))),
     NAV.map(([href, label, ic]) => h('a', { href, 'data-nav': href }, icon(ic, 17), h('span', null, label))),
     state.user.role === 'admin' ? h('a', { href: '#/usuarios', 'data-nav': '#/usuarios' }, icon('users', 17), h('span', null, 'Usuarios')) : null,
-    h('div', { class: 'spacer' }));
+    h('div', { class: 'spacer' }),
+    h('div', { class: 'muted small', style: { padding: '8px 14px' }, title: 'Versión instalada' }, `v${state.meta?.version || ''}`));
 
   // Búsqueda global
   const input = h('input', { type: 'search', placeholder: 'Buscar equipo, IP, serie, nodo, cliente…  ( / )', 'aria-label': 'Búsqueda global' });

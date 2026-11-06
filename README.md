@@ -128,3 +128,17 @@ Menú **Planta externa** (`#/planta`):
 - **Hilos**: cada cable muestra sus hilos con el código de colores TIA-598 (tubo y color); marque cada hilo como libre/usado/reservado/dañado y a qué PON, splitter o cliente está asignado.
 - Vista **satelital** (Esri; configurable con `SAT_TILE_URL`) para ubicar postes. Los cables y postes también aparecen en el **Mapa** general.
 - Los elementos siguen formando el árbol FTTH: *Ver en árbol* e *Impacto* funcionan igual.
+
+## Importar desde OZmap (KMZ / KML)
+
+En **Planta externa → Importar KMZ / KML** suba el archivo exportado de OZmap (también sirve Google Earth o QGIS). El asistente lista cada carpeta/capa con su geometría y propone qué es (poste, cable, NAP/CTO, caja de empalme, splitter, cliente); usted puede corregirlo antes de importar.
+
+- Los postes a menos de 1 m de uno existente se reutilizan; los vértices de cable a menos de 3 m de un poste se anclan a él.
+- El número de hilos se toma del nombre si aparece (p. ej. «Troncal 24F»).
+- Reimportar el mismo archivo no duplica (mismo nombre y posición).
+- Se importa sin jerarquía: después indique de qué elemento nace cada cable (Editar datos).
+- Los polígonos (zonas) se ignoran. Requiere rol de escritura. Sin dependencias extra: el KMZ se lee con `zlib`.
+
+## Versión
+
+`document version` y el pie del menú muestran `versión+build.commit` (p. ej. `1.2.0+6.ab12cd3`): el número base está en `package.json` y el build es el número de commits, así que cambia con cada actualización.

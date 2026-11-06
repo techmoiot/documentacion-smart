@@ -114,3 +114,44 @@ test('planta externa: postes, cable con trazado y sincronización', async () => 
   assert.equal(pl.elements.find((e) => e.id === cable.id).path[1][2], null);
   assert.equal((await call('lector', 'POST', '/api/poles', { lat: 1, lng: 1 })).status, 403);
 });
+
+test('importación KMZ/KML: vista previa, mapeo, anclaje a postes y duplicados', async () => {
+  const zlib = await import('node:zlib');
+  const kml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Proyecto OZ</name>
+  <Folder><name>Postes</name>
+    <Placemark><name>PX-1</name><Point><coordinates>-90.6000,14.6000,0</coordinates></Point></Placemark>
+    <Placemark><name>PX-2</name><Point><coordinates>-90.6010,14.6000,0</coordinates></Point></Placemark></Folder>
+  <Folder><name>Cables</name><Folder><name>Troncal 24F</name>
+    <Placemark><name>Cable A &amp; B 24F</name><description><![CDATA[<b>Cabo</b> ADSS]]></description><LineString><coordinates>-90.6000,14.6000 -90.60055,14.60001 -90.6010,14.6000</coordinates></LineString></Placemark></Folder></Folder>
+  <Folder><name>CTO</name><Placemark><name>CTO-9</name><Point><coordinates>-90.60100,14.60001</coordinates></Point></Placemark></Folder>
+  <Folder><name>Zonas</name><Placemark><name>Z</name><Polygon><outerBoundaryRingCoordinates/><outerBoundaryIs><LinearRing><coordinates>-90.6,14.6 -90.7,14.6 -90.7,14.7 -90.6,14.6</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark></Folder>
+  </Document></kml>`;
+  // KMZ mínimo (ZIP con método "stored")
+  const data = Buffer.from(kml), name = Buffer.from('doc.kml');
+  const crc = zlib.crc32(data);
+  const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(name.length, 26);
+  const cd = Buffer.alloc(46); cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(20, 4); cd.writeUInt16LE(20, 6); cd.writeUInt32LE(crc, 16); cd.writeUInt32LE(data.length, 20); cd.writeUInt32LE(data.length, 24); cd.writeUInt16LE(name.length, 28);
+  const cdOff = lh.length + name.length + data.length;
+  const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(cd.length + name.length, 12); end.writeUInt32LE(cdOff, 16);
+  const kmz = Buffer.concat([lh, name, data, cd, name, end]);
+
+  const upload = (who, url, body) => fetch(base + url, { method: 'POST', headers: { 'X-Requested-With': 'SmartDoc', 'Content-Type': 'application/octet-stream', Cookie: jar[who] }, body });
+  assert.equal((await upload('lector', '/api/import/kmz/preview', kmz)).status, 403);
+  assert.equal((await upload('admin', '/api/import/kmz/preview', Buffer.from('basura'))).status, 400);
+  const prev = await (await upload('admin', '/api/import/kmz/preview?name=oz.kmz', kmz)).json();
+  assert.equal(prev.total, 5);
+  const sug = Object.fromEntries(prev.groups.map((g) => [g.folder, g.suggested]));
+  assert.equal(sug.Postes, 'pole'); assert.equal(sug['Cables / Troncal 24F'], 'cable'); assert.equal(sug.CTO, 'nap'); assert.equal(sug.Zonas, 'ignore');
+  const mapping = Object.fromEntries(prev.groups.map((g) => [g.key, g.suggested]));
+  const done = (await call('admin', 'POST', '/api/import/kmz/commit', { token: prev.token, mapping })).data;
+  assert.equal(done.poles, 2); assert.equal(done.cables, 1); assert.equal(done.naps, 1); assert.equal(done.linkedVertices, 2);
+  const pl = (await call('admin', 'GET', '/api/planta')).data;
+  const cab = pl.elements.find((e) => e.name === 'Cable A & B 24F');
+  assert.equal(cab.props.fibras_total, 24); assert.ok(cab.path[0][2] && cab.path[2][2] && cab.path[1][2] === null);
+  assert.ok(pl.elements.find((e) => e.name === 'CTO-9').props.poste_id);
+  // reimportar el mismo archivo no duplica
+  const prev2 = await (await upload('admin', '/api/import/kmz/preview', kmz)).json();
+  const again = (await call('admin', 'POST', '/api/import/kmz/commit', { token: prev2.token, mapping })).data;
+  assert.equal(again.poles, 0); assert.equal(again.cables, 0); assert.equal(again.duplicates, 2);
+  assert.equal((await call('admin', 'POST', '/api/import/kmz/commit', { token: prev2.token, mapping })).status, 400);
+});

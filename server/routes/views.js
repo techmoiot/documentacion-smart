@@ -6,13 +6,15 @@ import { wrap, bad, notFound, intParam, ph } from '../http.js';
 import { STATUSES, NODE_TYPES, DEVICE_TYPES, PORT_KINDS, FIBER_KINDS, LOGICAL_TYPES, POLE_MATERIALS } from '../schema-meta.js';
 import { TILE_URL, TILE_ATTRIBUTION, SAT_TILE_URL, SAT_ATTRIBUTION } from '../config.js';
 import { connectionById } from './crud.js';
+import { readVersion } from '../version.js';
 
 export const router = express.Router();
 
+const VERSION = readVersion();
 router.get('/meta', wrap((_req, res) => {
   res.json({
     statuses: STATUSES, nodeTypes: NODE_TYPES, deviceTypes: DEVICE_TYPES, portKinds: PORT_KINDS,
-    fiberKinds: FIBER_KINDS, logicalTypes: LOGICAL_TYPES, tileUrl: TILE_URL, tileAttribution: TILE_ATTRIBUTION, satUrl: SAT_TILE_URL, satAttribution: SAT_ATTRIBUTION, poleMaterials: POLE_MATERIALS,
+    fiberKinds: FIBER_KINDS, logicalTypes: LOGICAL_TYPES, tileUrl: TILE_URL, tileAttribution: TILE_ATTRIBUTION, satUrl: SAT_TILE_URL, satAttribution: SAT_ATTRIBUTION, poleMaterials: POLE_MATERIALS, version: VERSION,
   });
 }));
 

@@ -35,7 +35,11 @@ need_root() {
 }
 
 node_cli() { (cd "$APP_DIR" && node --disable-warning=ExperimentalWarning server/cli.js "$@"); }
-app_version() { node -p "require('$APP_DIR/package.json').version" 2>/dev/null || echo '?'; }
+app_version() {
+  local v n; v="$(node -p "require('$APP_DIR/package.json').version" 2>/dev/null || echo '?')"
+  n="$(git -C "$APP_DIR" rev-list --count HEAD 2>/dev/null || true)"
+  [ -n "$n" ] && echo "$v+$n" || echo "$v"
+}
 short_rev() { git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo '?'; }
 
 health() {

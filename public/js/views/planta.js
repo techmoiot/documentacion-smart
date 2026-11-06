@@ -4,6 +4,7 @@ import { STATUS, FIBER_KIND, FIBER_PROPS, POLE_MATERIAL, cableColor } from '../c
 import { h, btn, clear, go, state, can, haversineKm, fmtKm, badge, props, openPanel, closePanel, formModal, confirmBox, guard, toast } from '../ui.js';
 import { filesWidget, historyList, showImpact } from '../shared.js';
 import { strandsEditor } from '../strands.js';
+import { importKmzWizard } from './import-kmz.js';
 
 const L = window.L;
 const sc = (st) => STATUS[st]?.color || '#94a3b8';
@@ -357,6 +358,8 @@ export async function plantaView(root, query = {}) {
     return h('label', null, i, label);
   };
   ctl.append(h('h5', null, 'Capas'), toggle('Cables', G.cables), toggle('Postes', G.poles), toggle('Cajas y clientes', G.els),
+    editable ? h('h5', null, 'Migración') : null,
+    editable ? btn('Importar KMZ / KML', { ic: 'plus', onClick: () => importKmzWizard({ onDone: () => go(location.hash) }) }) : null,
     h('h5', null, 'Mapa base'),
     btn(sat ? 'Vista de calles' : 'Vista satelital', { onClick: () => { localStorage.setItem('sd_map_sat', sat ? '0' : '1'); go(location.hash); } }),
     btn('Ajustar a la planta', { ic: 'fit', onClick: fit }),
