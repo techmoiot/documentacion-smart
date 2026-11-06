@@ -19,7 +19,7 @@ export const ENTITIES = {
     table: 'nodes', label: 'nodo', nameField: 'name',
     fields: {
       code: text, name: text, type: oneOf(NODE_TYPES), lat: num, lng: num, location: text, address: text,
-      description: text, status: oneOf(STATUSES), installed_at: date, responsible: text,
+      description: text, status: oneOf(STATUSES), installed_at: date, responsible: text, height_m: num, structure: text,
     },
     required: ['code', 'name'],
     filters: ['type', 'status'],

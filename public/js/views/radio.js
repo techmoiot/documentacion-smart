@@ -38,6 +38,31 @@ export async function antennaForm(antenna = null, nodeId = null) {
   return guard(() => (antenna ? api.patch(`/api/antennas/${antenna.id}`, v) : api.post('/api/antennas', v)));
 }
 
+export const STRUCTURES = [['', '—'], ['Autosoportada', 'Torre autosoportada'], ['Venteada', 'Torre venteada (con retenidas)'], ['Monopolo', 'Monopolo'], ['Mástil', 'Mástil / poste'], ['Azotea', 'Azotea / edificio'], ['Otro', 'Otro']];
+
+/** Alta / edición de una torre (es un nodo de tipo «torre» con altura y estructura). */
+export async function towerForm(node = null) {
+  const v = await formModal({
+    title: node ? `Editar torre · ${node.name}` : 'Nueva torre', wide: true,
+    values: node || { status: 'operativo', structure: 'Autosoportada' },
+    fields: [
+      { name: 'name', label: 'Nombre de la torre', required: true, maxlength: 80 },
+      { name: 'code', label: 'Código', required: true, maxlength: 30, placeholder: 'TORRE-01' },
+      { name: 'structure', label: 'Tipo de estructura', type: 'select', options: STRUCTURES },
+      { name: 'height_m', label: 'Altura (m)', type: 'number', step: 'any', min: 0 },
+      { name: 'lat', label: 'Latitud (GPS)', type: 'number', step: 'any', min: -90, max: 90 },
+      { name: 'lng', label: 'Longitud (GPS)', type: 'number', step: 'any', min: -180, max: 180 },
+      { name: 'location', label: 'Ubicación (municipio, zona)' }, { name: 'address', label: 'Dirección o referencia' },
+      { name: 'status', label: 'Estado operativo', type: 'select', options: statusOptions() },
+      { name: 'responsible', label: 'Responsable técnico' },
+      { name: 'description', label: 'Descripción / observaciones', type: 'textarea' },
+    ],
+  });
+  if (!v) return null;
+  v.type = 'torre';
+  return guard(() => (node ? api.patch(`/api/nodes/${node.id}`, v) : api.post('/api/nodes', v)));
+}
+
 export async function radiolinkForm(link = null) {
   const [ants, nodes] = await Promise.all([api.get('/api/antennas'), api.get('/api/nodes')]);
   const nm = new Map(nodes.map((n) => [n.id, n.name]));
@@ -125,20 +150,19 @@ export async function radioView(root, query = {}) {
 
   const head = h('div', { class: 'page-head', style: { padding: '14px 22px 0' } }, h('h2', null, 'Radioenlaces'),
     h('span', { class: 'muted' }, `${links.length} enlaces · ${antennas.length} antenas`), h('span', { class: 'grow' }));
-  if (can('write')) head.append(btn('Nueva antena', { ic: 'plus', onClick: async () => { if (await antennaForm()) go(location.hash); } }), btn('Nuevo radioenlace', { ic: 'link', kind: 'primary', onClick: async () => { if (await radiolinkForm()) go(location.hash); } }));
+  if (can('write')) head.append(btn('Nueva torre', { ic: 'plus', onClick: async () => { const t = await towerForm(); if (t) go(`#/radioenlaces?site=${t.id}`); } }), btn('Nueva antena', { ic: 'plus', onClick: async () => { if (await antennaForm()) go(location.hash); } }), btn('Nuevo radioenlace', { ic: 'link', kind: 'primary', onClick: async () => { if (await radiolinkForm()) go(location.hash); } }));
   const svg = s('svg', { class: 'canvas', role: 'img', 'aria-label': 'Diagrama de radioenlaces' });
   const ctrl = panZoom(svg, { min: 0.2, max: 4 });
   head.append(zoomToolbar(ctrl));
   const legend = h('div', { class: 'legend' }, Object.entries(STATUS).map(([k, o]) => h('span', null, h('i', { style: { background: o.color } }), o.label)), h('span', null, '⇢ dirección origen → destino'));
   const host = h('div', { class: 'svg-host tall', style: { margin: '14px 22px 22px', height: 'calc(100vh - 150px)' } }, svg, legend);
   root.append(head, host);
-  if (!antennas.length) { host.append(h('div', { class: 'empty', style: { position: 'absolute', inset: '30% 0 auto' } }, 'Aún no hay antenas registradas.')); return; }
-
-  // Sitios con antenas
-  const sites = nodes.filter((n) => antennas.some((a) => a.node_id === n.id)).map((n) => {
+  // Sitios: torres/repetidores (aunque aún no tengan antenas) y cualquier nodo con antenas
+  const sites = nodes.filter((n) => n.type === 'torre' || n.type === 'repetidor' || antennas.some((a) => a.node_id === n.id)).map((n) => {
     const ants = antennas.filter((a) => a.node_id === n.id);
-    return { node: n, ants, w: CW, h: HEAD + ants.length * ROW + PAD, x: 0, y: 0 };
+    return { node: n, ants, w: CW, h: HEAD + Math.max(ants.length, 1) * ROW + PAD, x: 0, y: 0 };
   });
+  if (!sites.length) { host.append(h('div', { class: 'empty', style: { position: 'absolute', inset: '30% 0 auto' } }, 'Aún no hay torres ni antenas registradas.', can('write') ? h('div', { style: { marginTop: '10px' } }, btn('Crear la primera torre', { ic: 'plus', kind: 'primary', onClick: async () => { const t = await towerForm(); if (t) go(`#/radioenlaces?site=${t.id}`); } })) : null)); return; }
   // Proyección geográfica con separación de solapes
   const geo = sites.filter((x) => x.node.lat != null);
   if (geo.length) {
@@ -216,6 +240,14 @@ export async function radioView(root, query = {}) {
         s('rect', { class: 'card', width: st.w, height: st.h, rx: 12 }), s('rect', { width: st.w, height: 5, rx: 2, fill: nt.color }),
         s('text', { class: 'sname', x: 14, y: 26 }, st.node.name.length > 24 ? st.node.name.slice(0, 23) + '…' : st.node.name),
         s('text', { class: 'stype', x: 14, y: 40 }, `${nt.label} · ${st.node.code}`));
+      const head_ = s('rect', { x: 0, y: 5, width: st.w - 60, height: HEAD - 8, fill: 'transparent', 'data-nopan': '', style: 'cursor:pointer' }, s('title', null, 'Ver torre y sus antenas'));
+      head_.addEventListener('click', (e) => { e.stopPropagation(); if (!ctrl.justPanned()) selectSite(st.node); });
+      g.append(head_);
+      if (!st.ants.length) {
+        const er = s('g', { transform: `translate(8 ${HEAD})`, 'data-nopan': '', style: 'cursor:pointer' }, s('rect', { width: st.w - 16, height: ROW - 4, rx: 6, fill: 'none', stroke: '#2a3a5c', 'stroke-dasharray': '4 4' }), s('text', { x: 12, y: 16, fill: '#7d8ba8' }, can('write') ? '+ Agregar antenas' : 'Sin antenas'));
+        er.addEventListener('click', (e) => { e.stopPropagation(); selectSite(st.node); });
+        g.append(er);
+      }
       st.ants.forEach((a, i) => {
         const row = s('g', { class: `ant ${selAnt === a.id ? 'sel' : ''}`, transform: `translate(8 ${HEAD + i * ROW})`, 'data-nopan': '' },
           s('rect', { width: st.w - 16, height: ROW - 4, rx: 6 }), s('circle', { cx: 13, cy: (ROW - 4) / 2, r: 4.5, fill: sc(a.status) }),
@@ -235,6 +267,27 @@ export async function radioView(root, query = {}) {
     // al cerrar el panel se limpia la selección
     document.getElementById('panel')?.querySelector('.icon-btn')?.addEventListener('click', () => { selAnt = null; draw(); }, { once: true });
   }
+  function selectSite(n) {
+    selAnt = null; draw();
+    siteFor(n);
+  }
+  function siteFor(n) {
+    const ants = antennas.filter((a) => a.node_id === n.id);
+    const body = h('div', { class: 'card-stack' },
+      h('div', { class: 'row gap wrap' }, h('span', { class: 'chip', style: { '--c': (NODE_TYPE[n.type] || NODE_TYPE.otro).color } }, (NODE_TYPE[n.type] || NODE_TYPE.otro).label), badge(n.status)),
+      props([['Código', n.code], ['Estructura', n.structure], ['Altura', fmt.val(n.height_m, 'm')], ['Coordenadas', n.lat != null ? `${n.lat}, ${n.lng}` : null], ['Ubicación', [n.location, n.address].filter(Boolean).join(' · ')], ['Responsable', n.responsible], ['Descripción', n.description]]),
+      h('h4', null, `Antenas en esta torre (${ants.length})`),
+      ants.length ? h('ul', { class: 'simple' }, ants.map((a) => h('li', null, h('a', { class: 'link', onclick: () => selectAntenna(a) }, a.name), ' ', h('span', { class: 'muted small' }, [a.role, a.height_m != null ? `${a.height_m} m` : null, a.azimuth != null ? `${a.azimuth}°` : null, a.freq_mhz ? `${a.freq_mhz} MHz` : null].filter(Boolean).join(' · ')), ' ', badge(a.status))))
+        : h('p', { class: 'muted small' }, 'Esta torre aún no tiene antenas.'),
+      h('div', { class: 'row gap wrap' },
+        can('write') ? btn('Agregar antena', { ic: 'plus', kind: 'primary', onClick: async () => { if (await antennaForm(null, n.id)) go(`#/radioenlaces?site=${n.id}`); } }) : null,
+        can('update') ? btn('Editar torre', { ic: 'edit', onClick: async () => { if (await towerForm(n)) go(`#/radioenlaces?site=${n.id}`); } }) : null,
+        btn('Abrir nodo', { onClick: () => go(`#/nodo/${n.id}`) }),
+        btn('Ver en mapa', { onClick: () => go(`#/mapa?node=${n.id}`) }),
+        btn('Impacto', { ic: 'alert', onClick: () => showImpact('node', n.id) })),
+      h('h4', null, 'Fotografías'), filesWidget('node', n.id));
+    openPanel(n.name, body, { subtitle: 'Torre / sitio de radio' });
+  }
   svg.addEventListener('click', () => { if (!ctrl.justPanned() && selAnt) { selAnt = null; closePanel(true); draw(); } });
 
   draw();
@@ -245,6 +298,7 @@ export async function radioView(root, query = {}) {
   requestAnimationFrame(() => {
     ctrl.fit(bbox, 20, 1.3);
     if (query.link) showLinkModal(Number(query.link), { onChanged: reload });
+    if (query.site) { const n = nodeById.get(Number(query.site)); if (n) siteFor(n); }
     if (query.antenna) { const a = antById.get(Number(query.antenna)); if (a) selectAntenna(a); }
   });
 }

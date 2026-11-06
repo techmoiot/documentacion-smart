@@ -20,6 +20,8 @@ export async function nodeForm(node = null) {
       { name: 'status', label: 'Estado operativo', type: 'select', options: statusOptions() },
       { name: 'lat', label: 'Latitud (GPS)', type: 'number', step: 'any', min: -90, max: 90, placeholder: '14.634900' },
       { name: 'lng', label: 'Longitud (GPS)', type: 'number', step: 'any', min: -180, max: 180, placeholder: '-90.506900' },
+      { name: 'height_m', label: 'Altura de la torre / estructura (m)', type: 'number', step: 'any', min: 0 },
+      { name: 'structure', label: 'Tipo de estructura', placeholder: 'Autosoportada, venteada, monopolo…', maxlength: 60 },
       { name: 'location', label: 'Ubicación geográfica (municipio, zona)' },
       { name: 'address', label: 'Dirección o referencia' },
       { name: 'installed_at', label: 'Fecha de instalación', type: 'date' },

@@ -142,3 +142,7 @@ En **Planta externa → Importar KMZ / KML** suba el archivo exportado de OZmap 
 ## Versión
 
 `document version` y el pie del menú muestran `versión+build.commit` (p. ej. `1.2.0+6.ab12cd3`): el número base está en `package.json` y el build es el número de commits, así que cambia con cada actualización.
+
+## Torres y antenas
+
+En **Radioenlaces**: *Nueva torre* (nombre, código, estructura, altura, GPS, responsable) y, en la ficha de cada torre (clic en su cabecera del diagrama), *Agregar antena* con el nodo ya seleccionado. Una torre sin antenas aparece igualmente en el diagrama con «+ Agregar antenas». Cada antena guarda altura, azimut, frecuencia, etc., y se enlaza con otras en *Nuevo radioenlace*.

@@ -226,6 +226,9 @@ db.exec(SCHEMA);
 const MIGRATIONS = [
   // 1: trazado geográfico de cables de fibra (planta externa): JSON [[lat,lng,poleId|null], ...]
   'ALTER TABLE fiber_elements ADD COLUMN path TEXT',
+  // 2-3: datos de torre / estructura en los nodos
+  'ALTER TABLE nodes ADD COLUMN height_m REAL',
+  "ALTER TABLE nodes ADD COLUMN structure TEXT DEFAULT ''",
 ];
 {
   const current = db.prepare('PRAGMA user_version').get().user_version;
