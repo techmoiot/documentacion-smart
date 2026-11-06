@@ -1,0 +1,237 @@
+// Capa de base de datos (SQLite nativo de Node, sin dependencias nativas)
+import { DatabaseSync } from 'node:sqlite';
+import fs from 'node:fs';
+import path from 'node:path';
+import { DATA_DIR } from './config.js';
+
+fs.mkdirSync(DATA_DIR, { recursive: true });
+export const DB_FILE = path.join(DATA_DIR, 'smartdoc.db');
+export const db = new DatabaseSync(DB_FILE);
+
+db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  name TEXT NOT NULL DEFAULT '',
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin','engineer','technician','viewer')),
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS nodes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'distribucion',
+  lat REAL, lng REAL,
+  location TEXT DEFAULT '',
+  address TEXT DEFAULT '',
+  description TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'operativo',
+  installed_at TEXT,
+  responsible TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS racks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  units INTEGER NOT NULL DEFAULT 42 CHECK (units BETWEEN 1 AND 60),
+  notes TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS devices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  node_id INTEGER REFERENCES nodes(id) ON DELETE SET NULL,
+  rack_id INTEGER REFERENCES racks(id) ON DELETE SET NULL,
+  rack_u INTEGER,
+  u_height INTEGER NOT NULL DEFAULT 1 CHECK (u_height BETWEEN 1 AND 20),
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'other',
+  brand TEXT DEFAULT '',
+  model TEXT DEFAULT '',
+  serial TEXT DEFAULT '',
+  ip TEXT DEFAULT '',
+  mac TEXT DEFAULT '',
+  firmware TEXT DEFAULT '',
+  location TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'operativo',
+  installed_at TEXT,
+  notes TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_devices_node ON devices(node_id);
+CREATE INDEX IF NOT EXISTS idx_devices_rack ON devices(rack_id);
+
+CREATE TABLE IF NOT EXISTS ports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'rj45',
+  idx INTEGER NOT NULL DEFAULT 0,
+  speed TEXT DEFAULT '',
+  label TEXT DEFAULT '',
+  UNIQUE (device_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_ports_device ON ports(device_id);
+
+CREATE TABLE IF NOT EXISTS connections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  layer TEXT NOT NULL DEFAULT 'physical' CHECK (layer IN ('physical','logical')),
+  a_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  a_port_id INTEGER REFERENCES ports(id) ON DELETE SET NULL,
+  b_device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  b_port_id INTEGER REFERENCES ports(id) ON DELETE SET NULL,
+  conn_type TEXT DEFAULT '',
+  medium TEXT DEFAULT '',
+  cable_id TEXT DEFAULT '',
+  speed TEXT DEFAULT '',
+  vlan TEXT DEFAULT '',
+  network TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'operativo',
+  notes TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_conn_a ON connections(a_device_id);
+CREATE INDEX IF NOT EXISTS idx_conn_b ON connections(b_device_id);
+-- Un puerto físico solo admite un cable
+CREATE UNIQUE INDEX IF NOT EXISTS uq_conn_phys_a ON connections(a_port_id) WHERE layer='physical' AND a_port_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_conn_phys_b ON connections(b_port_id) WHERE layer='physical' AND b_port_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS fiber_elements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL,
+  code TEXT DEFAULT '',
+  parent_id INTEGER REFERENCES fiber_elements(id) ON DELETE CASCADE,
+  node_id INTEGER REFERENCES nodes(id) ON DELETE SET NULL,
+  device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
+  port_id INTEGER REFERENCES ports(id) ON DELETE SET NULL,
+  lat REAL, lng REAL,
+  status TEXT NOT NULL DEFAULT 'operativo',
+  props TEXT NOT NULL DEFAULT '{}',
+  notes TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_fiber_parent ON fiber_elements(parent_id);
+
+CREATE TABLE IF NOT EXISTS antennas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  brand TEXT DEFAULT '',
+  model TEXT DEFAULT '',
+  ip TEXT DEFAULT '',
+  lat REAL, lng REAL,
+  height_m REAL,
+  azimuth REAL,
+  freq_mhz REAL,
+  channel_width TEXT DEFAULT '',
+  tx_power_dbm REAL,
+  gain_dbi REAL,
+  polarization TEXT DEFAULT '',
+  capacity TEXT DEFAULT '',
+  role TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'operativo',
+  notes TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_antennas_node ON antennas(node_id);
+
+CREATE TABLE IF NOT EXISTS radiolinks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  link_type TEXT NOT NULL DEFAULT 'PTP' CHECK (link_type IN ('PTP','PTMP')),
+  a_antenna_id INTEGER NOT NULL REFERENCES antennas(id) ON DELETE CASCADE,
+  b_antenna_id INTEGER NOT NULL REFERENCES antennas(id) ON DELETE CASCADE,
+  freq_mhz REAL,
+  rssi_dbm REAL,
+  capacity TEXT DEFAULT '',
+  availability TEXT DEFAULT '',
+  installed_at TEXT,
+  status TEXT NOT NULL DEFAULT 'operativo',
+  notes TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK (a_antenna_id <> b_antenna_id)
+);
+
+CREATE TABLE IF NOT EXISTS files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL,
+  entity_id INTEGER NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'photo',
+  stored_name TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  caption TEXT DEFAULT '',
+  uploaded_by TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_files_entity ON files(entity_type, entity_id);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  user_id INTEGER,
+  username TEXT NOT NULL DEFAULT '',
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id INTEGER,
+  summary TEXT DEFAULT '',
+  before TEXT,
+  after TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at);
+`;
+db.exec(SCHEMA);
+
+// Migraciones incrementales: agregue nuevas sentencias SQL AL FINAL de la lista (nunca edite las anteriores).
+// `document update` reinicia el servicio y las migraciones pendientes se aplican al arrancar.
+const MIGRATIONS = [
+  // 1: ejemplo → 'ALTER TABLE devices ADD COLUMN asset_tag TEXT DEFAULT \'\''
+];
+{
+  const current = db.prepare('PRAGMA user_version').get().user_version;
+  for (let i = current; i < MIGRATIONS.length; i++) {
+    db.exec('BEGIN');
+    try { db.exec(MIGRATIONS[i]); db.exec(`PRAGMA user_version = ${i + 1}`); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
+  }
+}
+
+/** Ejecuta fn dentro de una transacción. */
+export function tx(fn) {
+  db.exec('BEGIN');
+  try {
+    const r = fn();
+    db.exec('COMMIT');
+    return r;
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch { /* ya revertida */ }
+    throw e;
+  }
+}
+
+export const all = (sql, ...p) => db.prepare(sql).all(...p);
+export const get = (sql, ...p) => db.prepare(sql).get(...p);
+export const run = (sql, ...p) => db.prepare(sql).run(...p);

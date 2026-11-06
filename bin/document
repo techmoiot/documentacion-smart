@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+# document — administración del sistema de documentación de red de Smart Connection
+#   document update      Actualiza desde GitHub (respaldo previo + reinicio + reversión automática si falla)
+#   document help        Lista de comandos
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+ORIG_ARGS=("$@")
+APP_DIR="${APP_DIR:-$(dirname "$(dirname "$SELF")")}"
+ENV_FILE="${ENV_FILE:-/etc/documentacion-smart.env}"
+SERVICE="${SERVICE:-documentacion-smart}"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/documentacion-smart}"
+KEEP_BACKUPS="${KEEP_BACKUPS:-10}"
+
+# Variables de configuración del servicio (PORT, DATA_DIR, ...)
+if [ -f "$ENV_FILE" ]; then set -a; . "$ENV_FILE"; set +a; fi
+PORT="${PORT:-3000}"
+DATA_DIR="${DATA_DIR:-$APP_DIR/data}"
+export DATA_DIR
+
+c() { if [ -t 1 ]; then printf '\033[%sm%s\033[0m' "$1" "$2"; else printf '%s' "$2"; fi; }
+info() { echo "$(c 36 '▸') $*"; }
+ok()   { echo "$(c 32 '✔') $*"; }
+warn() { echo "$(c 33 '!') $*" >&2; }
+die()  { echo "$(c 31 '✘') $*" >&2; exit 1; }
+
+has_systemd() { [ -z "${NO_SERVICE:-}" ] && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; }
+svc() { if has_systemd; then systemctl "$@" "$SERVICE"; else warn "systemd no disponible: omito 'systemctl $*'"; fi; }
+
+need_root() {
+  if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then exec sudo -E "$SELF" "${ORIG_ARGS[@]}"; fi
+    die "Este comando requiere permisos de administrador (root)."
+  fi
+}
+
+node_cli() { (cd "$APP_DIR" && node --disable-warning=ExperimentalWarning server/cli.js "$@"); }
+app_version() { node -p "require('$APP_DIR/package.json').version" 2>/dev/null || echo '?'; }
+short_rev() { git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo '?'; }
+
+health() {
+  local i
+  for i in $(seq 1 30); do
+    if curl -fsS --max-time 2 "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
+
+# ---------- Respaldo ----------
+make_backup() {
+  local tag="${1:-manual}" out="${2:-}" ts tmp
+  ts="$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$BACKUP_DIR"
+  [ -n "$out" ] || out="$BACKUP_DIR/smartdoc-$tag-$ts.tar.gz"
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' RETURN
+  if [ -f "$DATA_DIR/smartdoc.db" ]; then
+    node_cli db-backup "$tmp/smartdoc.db" >/dev/null
+  fi
+  [ -d "$DATA_DIR/uploads" ] && cp -a "$DATA_DIR/uploads" "$tmp/uploads"
+  tar -czf "$out" -C "$tmp" . 2>/dev/null
+  chmod 600 "$out"
+  echo "$out"
+}
+
+prune_backups() {
+  ls -1t "$BACKUP_DIR"/smartdoc-*.tar.gz 2>/dev/null | tail -n +"$((KEEP_BACKUPS + 1))" | xargs -r rm -f --
+}
+
+cmd_backup() {
+  need_root "$@"
+  local f; f="$(make_backup manual "${1:-}")"
+  prune_backups
+  ok "Respaldo creado: $f"
+}
+
+cmd_restore() {
+  need_root "$@"
+  local f="${1:-}"
+  [ -n "$f" ] && [ -f "$f" ] || die "Uso: document restore <archivo.tar.gz>"
+  read -r -p "Esto REEMPLAZA la base de datos y los archivos actuales. ¿Continuar? [s/N] " a
+  [[ "$a" =~ ^[sSyY]$ ]] || die "Cancelado."
+  local safety; safety="$(make_backup antes-de-restaurar)"
+  info "Copia de seguridad del estado actual: $safety"
+  local tmp; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+  tar -xzf "$f" -C "$tmp"
+  [ -f "$tmp/smartdoc.db" ] || die "El archivo no contiene smartdoc.db"
+  svc stop
+  rm -f "$DATA_DIR"/smartdoc.db "$DATA_DIR"/smartdoc.db-wal "$DATA_DIR"/smartdoc.db-shm
+  cp "$tmp/smartdoc.db" "$DATA_DIR/smartdoc.db"
+  if [ -d "$tmp/uploads" ]; then rm -rf "$DATA_DIR/uploads"; cp -a "$tmp/uploads" "$DATA_DIR/uploads"; fi
+  chown -R smartdoc:smartdoc "$DATA_DIR" 2>/dev/null || true
+  svc start
+  health && ok "Restauración completada." || die "El servicio no respondió tras restaurar. Revise: document logs"
+}
+
+# ---------- Actualización ----------
+cmd_update() {
+  need_root "$@"
+  local force=0
+  for a in "$@"; do [ "$a" = "--force" ] && force=1; done
+
+  exec 9>/var/lock/documentacion-smart.update
+  flock -n 9 || die "Ya hay una actualización en curso."
+
+  [ -d "$APP_DIR/.git" ] || die "$APP_DIR no es un repositorio git."
+  cd "$APP_DIR"
+  local branch="${BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"
+  [ "$branch" != "HEAD" ] || branch="main"
+  local old; old="$(git rev-parse HEAD)"
+  local old_ver; old_ver="$(app_version)"
+
+  info "Buscando actualizaciones en origin/$branch …"
+  git fetch --quiet origin "$branch" || die "No se pudo contactar con GitHub (¿red, credenciales o repositorio privado sin clave?)."
+  local new; new="$(git rev-parse "origin/$branch")"
+
+  if [ "$old" = "$new" ] && [ "$force" -eq 0 ]; then
+    ok "Ya está en la última versión (v$old_ver · $(git rev-parse --short HEAD))."
+    return 0
+  fi
+
+  if [ "$old" != "$new" ]; then
+    echo; info "Cambios que se aplicarán:"
+    git --no-pager log --oneline --no-decorate "$old..$new" | head -20 | sed 's/^/    /'
+    echo
+  fi
+
+  if [ -n "$(git status --porcelain --untracked-files=no)" ] && [ "$force" -eq 0 ]; then
+    warn "Hay modificaciones locales en $APP_DIR que impiden actualizar:"
+    git status --short --untracked-files=no | sed 's/^/    /' >&2
+    die "Descártelas con 'git -C $APP_DIR checkout -- .' o use: document update --force"
+  fi
+
+  info "Respaldando base de datos y archivos …"
+  local bk; bk="$(make_backup pre-update)"
+  prune_backups
+  ok "Respaldo: $bk"
+
+  if [ "$force" -eq 1 ]; then git reset --hard "origin/$branch" --quiet
+  else git merge --ff-only --quiet "origin/$branch" || die "No se pudo avanzar sin conflictos. Use: document update --force"; fi
+
+  local deps=0
+  if [ ! -d node_modules ] || ! git diff --quiet "$old" HEAD -- package.json package-lock.json 2>/dev/null; then deps=1; fi
+  if [ "$deps" -eq 1 ]; then
+    info "Instalando dependencias …"
+    npm ci --omit=dev --no-audit --no-fund --loglevel=error || { rollback "$old" 1 "$bk"; die "Falló npm ci. Se revirtió a la versión anterior."; }
+  fi
+
+  info "Reiniciando servicio …"
+  svc restart
+  if has_systemd && ! health; then
+    warn "El servicio no respondió tras actualizar. Revirtiendo …"
+    rollback "$old" "$deps" "$bk"
+    die "Actualización revertida a v$old_ver. Revise los registros con: document logs"
+  fi
+  ok "Actualizado: v$old_ver ($(git rev-parse --short "$old")) → v$(app_version) ($(short_rev))"
+}
+
+rollback() {
+  local old="$1" deps="$2"
+  git -C "$APP_DIR" reset --hard "$old" --quiet
+  [ "$deps" -eq 1 ] && (cd "$APP_DIR" && npm ci --omit=dev --no-audit --no-fund --loglevel=error) || true
+  svc restart || true
+  if has_systemd && health; then ok "Servicio restablecido con la versión anterior. Respaldo previo: ${3:-n/d}"; fi
+}
+
+# ---------- Otros comandos ----------
+cmd_status() {
+  echo "Smart Connection · Documentación de red"
+  echo "  versión:   v$(app_version) ($(short_rev))"
+  echo "  directorio: $APP_DIR"
+  echo "  datos:      $DATA_DIR"
+  if has_systemd; then echo "  servicio:   $(systemctl is-active "$SERVICE" 2>/dev/null || true) ($(systemctl is-enabled "$SERVICE" 2>/dev/null || true))"; fi
+  if curl -fsS --max-time 3 "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then echo "  respuesta:  $(c 32 'OK') en http://127.0.0.1:${PORT}"; else echo "  respuesta:  $(c 31 'sin respuesta')"; fi
+  local ip; ip="$(hostname -I 2>/dev/null | awk '{print $1}')"; [ -n "$ip" ] && echo "  acceso:     http://${ip}:${PORT}"
+  return 0
+}
+
+cmd_logs() { if [ "${1:-}" = "-f" ]; then journalctl -u "$SERVICE" -f -n 50; else journalctl -u "$SERVICE" -n "${1:-100}" --no-pager; fi; }
+
+cmd_help() {
+  cat <<'TXT'
+Uso: document <comando>
+
+  update [--force]      Actualiza desde GitHub: respalda, descarga, instala dependencias,
+                        reinicia y revierte solo si el servicio no arranca.
+  status                Estado del servicio y versión instalada.
+  start | stop | restart  Controla el servicio.
+  logs [-f | N]         Muestra los registros (-f para seguirlos).
+  backup [archivo]      Respalda base de datos y archivos subidos (.tar.gz).
+  restore <archivo>     Restaura un respaldo.
+  create-admin [usuario] [clave]   Crea un administrador o restablece su clave.
+  passwd <usuario> [clave]         Restablece la contraseña de un usuario.
+  list-users            Lista los usuarios.
+  seed-demo             Carga datos de demostración (solo si la base está vacía).
+  version               Muestra la versión.
+TXT
+}
+
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+  update|upgrade)  cmd_update "$@" ;;
+  status)          cmd_status ;;
+  start|stop|restart) need_root "$cmd" "$@"; svc "$cmd"; [ "$cmd" = stop ] || { health && ok "Servicio activo." || warn "Sin respuesta aún; revise: document logs"; } ;;
+  logs)            cmd_logs "$@" ;;
+  backup)          cmd_backup "$@" ;;
+  restore)         cmd_restore "$@" ;;
+  create-admin|passwd|list-users|seed-demo)
+                   need_root "$cmd" "$@"
+                   if [ "$(id -u)" -eq 0 ] && id smartdoc >/dev/null 2>&1; then
+                     # Ejecuta como el usuario del servicio para no dejar archivos de BD con dueño root
+                     (cd "$APP_DIR" && setpriv --reuid smartdoc --regid smartdoc --init-groups env DATA_DIR="$DATA_DIR" node --disable-warning=ExperimentalWarning server/cli.js "$cmd" "$@")
+                   else node_cli "$cmd" "$@"; fi ;;
+  version|-v|--version) echo "v$(app_version) ($(short_rev))" ;;
+  help|-h|--help)  cmd_help ;;
+  *) warn "Comando desconocido: $cmd"; cmd_help; exit 1 ;;
+esac

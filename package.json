@@ -1,0 +1,20 @@
+{
+  "name": "documentacion-smart",
+  "version": "1.0.0",
+  "description": "Sistema de documentación visual de infraestructura de red – Smart Connection",
+  "private": true,
+  "type": "module",
+  "main": "server/index.js",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "seed-demo": "node server/cli.js seed-demo",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "devDependencies": {},
+  "license": "UNLICENSED"
+}
