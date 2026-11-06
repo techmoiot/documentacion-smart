@@ -2,7 +2,7 @@
 import { api } from '../api.js';
 import { STATUS, FIBER_KIND, FIBER_CHILDREN, FIBER_PROPS } from '../catalog.js';
 import {
-  h, s, btn, badge, icon, props, clear, can, guard, toast, confirmBox, formModal, openPanel, closePanel, panZoom, zoomToolbar, emptyState, go, fmt, debounce,
+  h, s, btn, badge, icon, props, clear, can, guard, toast, confirmBox, formModal, openPanel, closePanel, panZoom, zoomToolbar, emptyState, go, fmt, debounce, download, csvCell, projectChip,
 } from '../ui.js';
 import { filesWidget, historyList, showImpact } from '../shared.js';
 
@@ -42,7 +42,29 @@ export async function fiberView(root, query = {}) {
   head.append(btn('Contraer clientes', { onClick: () => { for (const e of items) if (e.kind === 'nap') collapsed.add(e.id); redraw(true); } }), btn('Expandir todo', { onClick: () => { collapsed.clear(); redraw(true); } }), zoomToolbar(ctrl));
   const legend = h('div', { class: 'legend' }, Object.entries(FIBER_KIND).map(([k, o]) => h('span', null, h('i', { style: { background: o.color } }), o.label)));
   const host = h('div', { class: 'svg-host tall', style: { margin: '14px 22px 22px', height: 'calc(100vh - 150px)' } }, svg, legend);
-  root.append(head, host);
+
+  // ----- Vista de lista (por defecto) -----
+  let mode = 'list';
+  try { mode = localStorage.getItem('sd_fiber_view') === 'tree' ? 'tree' : 'list'; } catch { /* sin almacenamiento */ }
+  const fKind = h('select', { style: { width: 'auto' } }, h('option', { value: '' }, 'Todos los tipos'), Object.entries(FIBER_KIND).map(([k, o]) => h('option', { value: k }, o.label)));
+  const fStatus = h('select', { style: { width: 'auto' } }, h('option', { value: '' }, 'Todos los estados'), Object.entries(STATUS).map(([k, o]) => h('option', { value: k }, o.label)));
+  const listCount = h('span', { class: 'muted' });
+  const tbody = h('tbody');
+  const listBar = h('div', { class: 'row gap wrap', style: { margin: '14px 22px 0' } }, fKind, fStatus, listCount, h('span', { class: 'grow' }),
+    btn('Exportar CSV', { ic: 'download', onClick: () => exportCsv() }));
+  const listHost = h('div', { class: 'table-wrap', style: { margin: '10px 22px 22px', maxHeight: 'calc(100vh - 215px)' } },
+    h('table', { class: 't' }, h('thead', null, h('tr', null, ['Tipo', 'Nombre', 'Código', 'Depende de', 'Detalle', 'Nodo', 'Clientes', 'Estado'].map((c) => h('th', null, c)))), tbody));
+  const modeBtn = (key, label, ic) => h('button', { class: `btn ${mode === key ? 'on' : ''}`, type: 'button', onclick: () => setMode(key) }, icon(ic, 15), h('span', null, label));
+  const seg = h('div', { class: 'seg' });
+  function setMode(m) {
+    mode = m; try { localStorage.setItem('sd_fiber_view', m); } catch { /* ignorar */ }
+    clear(seg); seg.append(modeBtn('list', 'Lista', 'rack'), modeBtn('tree', 'Árbol', 'fiber'));
+    for (const c of head.children) if (c.classList.contains('zoombar') || (c.tagName === 'BUTTON' && /Contraer|Expandir/.test(c.textContent))) c.style.display = mode === 'tree' ? '' : 'none';
+    host.style.display = mode === 'tree' ? '' : 'none'; listHost.style.display = listBar.style.display = mode === 'list' ? '' : 'none';
+    if (mode === 'tree') requestAnimationFrame(() => ctrl.fit(bbox, 20, 1.2)); else renderList();
+  }
+  head.insertBefore(seg, search);
+  root.append(head, listBar, listHost, host);
 
   function index() {
     byId = new Map(items.map((e) => [e.id, e]));
@@ -55,6 +77,47 @@ export async function fiberView(root, query = {}) {
     roots = children.get(0) || [];
     document.getElementById('fiber-count').textContent = `${items.length} elementos · ${items.filter((e) => e.kind === 'client').length} clientes`;
   }
+
+  const clientCounts = () => {
+    const memo = new Map();
+    const count = (id) => { if (memo.has(id)) return memo.get(id); let n = 0; for (const c of children.get(id) || []) n += (c.kind === 'client' ? 1 : 0) + count(c.id); memo.set(id, n); return n; };
+    return count;
+  };
+  const listRows = () => {
+    const term = search.value.trim().toLowerCase();
+    const flat = term || fKind.value || fStatus.value;
+    const ok = (e) => (!fKind.value || e.kind === fKind.value) && (!fStatus.value || e.status === fStatus.value)
+      && (!term || `${e.name} ${e.code} ${FIBER_KIND[e.kind]?.label} ${JSON.stringify(e.props)}`.toLowerCase().includes(term));
+    if (flat) return items.filter(ok).map((e) => ({ e, depth: 0 }));
+    const out = [];
+    const walk = (e, depth) => { out.push({ e, depth }); for (const c of children.get(e.id) || []) walk(c, depth + 1); };
+    roots.forEach((r) => walk(r, 0));
+    return out;
+  };
+  function renderList() {
+    if (mode !== 'list') return;
+    const rows = listRows(), cc = clientCounts();
+    clear(tbody);
+    listCount.textContent = `${rows.length} de ${items.length} elementos`;
+    for (const { e, depth } of rows) {
+      const k = FIBER_KIND[e.kind] || FIBER_KIND.cable;
+      const par = byId.get(e.parent_id);
+      const n = e.kind === 'client' ? '' : cc(e.id);
+      const tr = h('tr', { 'data-id': e.id, class: e.id === selId ? 'sel' : '', onclick: () => select(e.id) },
+        h('td', null, h('span', { class: 'chip', style: { '--c': k.color } }, k.label.split(' /')[0])),
+        h('td', { style: { paddingLeft: `${10 + Math.min(depth, 7) * 11}px` } }, depth ? h('span', { class: 'muted' }, '└ ') : null, h('strong', null, e.name), ' ', projectChip(e.project_id)),
+        h('td', null, e.code), h('td', null, par ? par.name : '—'), h('td', { class: 'muted' }, summaryLine(e)),
+        h('td', null, nodes.find((x) => x.id === e.node_id)?.name || ''), h('td', null, n ? String(n) : ''), h('td', null, badge(e.status)));
+      tbody.append(tr);
+    }
+    if (!rows.length) tbody.append(h('tr', null, h('td', { colspan: 8 }, emptyState(items.length ? 'Sin resultados.' : 'Aún no hay elementos de fibra.'))));
+  }
+  function exportCsv() {
+    const lines = [['Tipo', 'Nombre', 'Código', 'Depende de', 'Detalle', 'Nodo', 'Estado'].map(csvCell).join(',')];
+    for (const { e } of listRows()) lines.push([FIBER_KIND[e.kind]?.label, e.name, e.code, byId.get(e.parent_id)?.name, summaryLine(e), nodes.find((x) => x.id === e.node_id)?.name, STATUS[e.status]?.label].map(csvCell).join(','));
+    download(`fibra-ftth-${new Date().toISOString().slice(0, 10)}.csv`, lines.join('\r\n'));
+  }
+  [fKind, fStatus].forEach((el) => el.addEventListener('input', renderList));
 
   const descendants = (id) => {
     const out = [];
@@ -132,7 +195,7 @@ export async function fiberView(root, query = {}) {
     bbox = { x: 0, y: 0, w: maxX, h: maxY };
   }
 
-  function redraw(refit = false) { index(); draw(); if (refit) ctrl.fit(bbox, 20, 1.2); }
+  function redraw(refit = false) { index(); draw(); renderList(); if (refit) ctrl.fit(bbox, 20, 1.2); }
   ctrl.refit = () => ctrl.fit(bbox, 20, 1.2);
 
   async function reload() { items = await api.get('/api/fiber'); redraw(); if (selId && byId.has(selId)) select(selId, { keepView: true }); else { selId = null; closePanel(true); } }
@@ -145,7 +208,8 @@ export async function fiberView(root, query = {}) {
     let changed = false;
     for (const a of ancestors(id)) if (collapsed.delete(a.id)) changed = true;
     draw();
-    if (focus) { const e = byId.get(id); ctrl.focus(e._x + BW / 2, e._y + BH / 2, 1.1); }
+    tbody.querySelectorAll('tr').forEach((r) => r.classList.toggle('sel', r.dataset.id === String(id)));
+    if (focus && mode === 'tree') { const e = byId.get(id); ctrl.focus(e._x + BW / 2, e._y + BH / 2, 1.1); }
     showPanel(el);
     void changed; void keepView;
   }
@@ -183,7 +247,7 @@ export async function fiberView(root, query = {}) {
           if (await guard(() => api.del(`/api/fiber/${el.id}`))) { toast('Elemento eliminado'); selId = null; closePanel(true); reload(); }
         } }) : null),
       h('h4', null, 'Fotografías y documentos'), filesWidget('fiber', el.id), h('h4', null, 'Historial'), historyList('fiber', el.id, 10));
-    openPanel(el.name, body, { subtitle: k.label, onClose: () => { selId = null; draw(); } });
+    openPanel(el.name, body, { subtitle: k.label, onClose: () => { selId = null; draw(); tbody.querySelectorAll('tr.sel').forEach((r) => r.classList.remove('sel')); } });
   }
 
   async function createElement(parent) {
@@ -240,19 +304,20 @@ export async function fiberView(root, query = {}) {
   }
 
   svg.addEventListener('click', () => { if (!ctrl.justPanned() && selId) { selId = null; closePanel(true); draw(); } });
-  search.addEventListener('input', debounce(() => draw(), 200));
+  search.addEventListener('input', debounce(() => { draw(); renderList(); }, 200));
   search.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const term = search.value.trim().toLowerCase();
     const m = items.find((it) => `${it.name} ${it.code} ${JSON.stringify(it.props)}`.toLowerCase().includes(term));
-    if (m) select(m.id, { focus: true }); else toast('Sin coincidencias', 'warn');
+    if (mode === 'tree') { if (m) select(m.id, { focus: true }); else toast('Sin coincidencias', 'warn'); }
   });
 
   index();
+  setMode(mode);
   if (items.filter((e) => e.kind === 'client').length > 40) for (const e of items) if (e.kind === 'nap') collapsed.add(e.id);
   draw();
   requestAnimationFrame(() => {
-    ctrl.fit(bbox, 20, 1.2);
+    if (mode === 'tree') ctrl.fit(bbox, 20, 1.2);
     if (query.sel && byId.has(Number(query.sel))) select(Number(query.sel), { focus: true });
   });
   if (!items.length) host.append(h('div', { class: 'empty', style: { position: 'absolute', inset: 'auto 0 20% 0' } }, can('write') ? 'Use «Nuevo elemento raíz» para crear la primera OLT.' : ''));

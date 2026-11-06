@@ -171,3 +171,5 @@ Seleccione cualquier elemento (cable, splitter, NAP, cliente…) y use:
 - **Diagrama de empalmes** (cajas NAP/CEO y splitters): cables que llegan y salen con sus hilos TIA-598, splitters 1:N y fusiones. Clic en un hilo y luego en otro para fusionarlos; clic en la fusión para quitarla. Los cables se asocian a la caja si empiezan/terminan sobre ella (trácelos haciendo clic en la caja) o por «Nace de».
 
 La pérdida usa 0,35 dB/km, la pérdida de inserción de cada splitter (o la típica de su relación) y 0,1 dB por caja/ODF.
+
+**Fibra FTTH en lista**: la vista por defecto es ahora un listado tipo inventario (tipo, nombre, código, de quién depende, detalle, nodo, clientes aguas abajo y estado), con filtros por tipo y estado, búsqueda y exportación CSV; clic en una fila abre su ficha. El diagrama de árbol sigue disponible con el botón **Árbol** (se recuerda la última vista).
