@@ -285,7 +285,7 @@ function lightbox(f) {
 }
 
 // ---------- Historial ----------
-const ENTITY_LABEL = { nodes: 'Nodo', racks: 'Rack', devices: 'Equipo', connections: 'Conexión', fiber: 'Fibra', antennas: 'Antena', radiolinks: 'Radioenlace', users: 'Usuario' };
+const ENTITY_LABEL = { nodes: 'Nodo', racks: 'Rack', devices: 'Equipo', connections: 'Conexión', fiber: 'Fibra', antennas: 'Antena', radiolinks: 'Radioenlace', poles: 'Poste', users: 'Usuario' };
 export const entityLabel = (t) => ENTITY_LABEL[t] || t;
 
 export function auditRow(a) {

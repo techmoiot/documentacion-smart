@@ -131,6 +131,21 @@ CREATE TABLE IF NOT EXISTS fiber_elements (
 );
 CREATE INDEX IF NOT EXISTS idx_fiber_parent ON fiber_elements(parent_id);
 
+CREATE TABLE IF NOT EXISTS poles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL DEFAULT '',
+  name TEXT DEFAULT '',
+  lat REAL NOT NULL, lng REAL NOT NULL,
+  material TEXT NOT NULL DEFAULT 'concreto',
+  height_m REAL,
+  owner TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'operativo',
+  notes TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_poles_pos ON poles(lat, lng);
+
 CREATE TABLE IF NOT EXISTS antennas (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
@@ -209,7 +224,8 @@ db.exec(SCHEMA);
 // Migraciones incrementales: agregue nuevas sentencias SQL AL FINAL de la lista (nunca edite las anteriores).
 // `document update` reinicia el servicio y las migraciones pendientes se aplican al arrancar.
 const MIGRATIONS = [
-  // 1: ejemplo → 'ALTER TABLE devices ADD COLUMN asset_tag TEXT DEFAULT \'\''
+  // 1: trazado geográfico de cables de fibra (planta externa): JSON [[lat,lng,poleId|null], ...]
+  'ALTER TABLE fiber_elements ADD COLUMN path TEXT',
 ];
 {
   const current = db.prepare('PRAGMA user_version').get().user_version;

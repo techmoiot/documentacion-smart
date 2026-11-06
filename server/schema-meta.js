@@ -5,6 +5,7 @@ export const NODE_TYPES = ['principal', 'distribucion', 'torre', 'repetidor', 'n
 export const DEVICE_TYPES = ['router', 'switch', 'olt', 'odf', 'patch_panel', 'organizer', 'ups', 'pdu', 'server', 'radio', 'onu', 'other'];
 export const PORT_KINDS = ['rj45', 'sfp', 'sfp+', 'sfp28', 'qsfp+', 'pon', 'fiber', 'console', 'mgmt', 'power', 'usb', 'other'];
 export const FIBER_KINDS = ['olt', 'pon', 'odf', 'cable', 'splitter', 'nap', 'closure', 'client'];
+export const POLE_MATERIALS = ['concreto', 'madera', 'metal', 'otro'];
 export const LOGICAL_TYPES = ['vlan', 'interfaz_virtual', 'troncal', 'red_ip', 'bridge', 'vpn', 'otro'];
 
 const text = (v) => (v == null ? '' : String(v).trim());
@@ -62,7 +63,14 @@ export const ENTITIES = {
     required: ['kind', 'name'],
     filters: ['kind', 'parent_id', 'node_id', 'status'],
     order: 'id',
-    json: 'props',
+    json: { props: 'object', path: 'path' },
+  },
+  poles: {
+    table: 'poles', label: 'poste', nameField: 'code',
+    fields: { code: text, name: text, lat: num, lng: num, material: oneOf(POLE_MATERIALS), height_m: num, owner: text, status: oneOf(STATUSES), notes: text },
+    required: ['lat', 'lng'],
+    filters: ['material', 'status', 'owner'],
+    order: 'id',
   },
   antennas: {
     table: 'antennas', label: 'antena', nameField: 'name',
@@ -98,11 +106,17 @@ export function sanitize(entity, body, partial) {
     if (typeof v === 'number' && Number.isNaN(v)) errors.push(`Valor inválido en "${key}"`);
     else data[key] = v;
   }
-  if (def.json && body[def.json] !== undefined) {
-    let p = body[def.json];
-    if (typeof p === 'string') { try { p = JSON.parse(p); } catch { errors.push(`"${def.json}" no es JSON válido`); p = {}; } }
-    if (p && typeof p === 'object' && !Array.isArray(p)) data[def.json] = JSON.stringify(p);
-    else errors.push(`"${def.json}" debe ser un objeto`);
+  for (const [key, shape] of Object.entries(def.json || {})) {
+    if (body[key] === undefined) continue;
+    let p = body[key];
+    if (typeof p === 'string') { try { p = JSON.parse(p); } catch { errors.push(`"${key}" no es JSON válido`); continue; } }
+    if (shape === 'path') {
+      if (p === null) { data[key] = null; continue; }
+      const path = normalizePath(p);
+      if (!path) errors.push('Trazado inválido: use una lista de puntos [lat, lng, poste?] (máx. 5000)');
+      else data[key] = JSON.stringify(path);
+    } else if (p && typeof p === 'object' && !Array.isArray(p)) data[key] = JSON.stringify(p);
+    else errors.push(`"${key}" debe ser un objeto`);
   }
   if (!partial) {
     for (const r of def.required) {
@@ -110,4 +124,19 @@ export function sanitize(entity, body, partial) {
     }
   }
   return { data, errors };
+}
+
+/** Valida un trazado: [[lat, lng, poleId|null], ...]. Devuelve null si no es válido. */
+export function normalizePath(p) {
+  if (!Array.isArray(p) || p.length > 5000) return null;
+  const out = [];
+  for (const pt of p) {
+    if (!Array.isArray(pt) || pt.length < 2) return null;
+    const lat = Number(pt[0]), lng = Number(pt[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+    const pid = pt[2] == null ? null : Number(pt[2]);
+    if (pid !== null && !Number.isInteger(pid)) return null;
+    out.push([Math.round(lat * 1e7) / 1e7, Math.round(lng * 1e7) / 1e7, pid]);
+  }
+  return out;
 }

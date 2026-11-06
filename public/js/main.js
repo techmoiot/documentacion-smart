@@ -5,6 +5,7 @@ import {
 } from './ui.js';
 import { homeView, nodesView, nodeView } from './views/nodes.js';
 import { mapView } from './views/map.js';
+import { plantaView } from './views/planta.js';
 import { fiberView } from './views/fiber.js';
 import { radioView } from './views/radio.js';
 import { inventoryView, connectionsView, historyView, usersView } from './views/lists.js';
@@ -36,7 +37,7 @@ function showLogin(message = '') {
 
 // ---------- Estructura ----------
 const NAV = [
-  ['#/', 'Inicio', 'home'], ['#/mapa', 'Mapa', 'map'], ['#/nodos', 'Nodos y racks', 'rack'], ['#/fibra', 'Fibra FTTH', 'fiber'], ['#/radioenlaces', 'Radioenlaces', 'radio'],
+  ['#/', 'Inicio', 'home'], ['#/mapa', 'Mapa', 'map'], ['#/nodos', 'Nodos y racks', 'rack'], ['#/planta', 'Planta externa', 'fiber'], ['#/fibra', 'Fibra FTTH', 'fiber'], ['#/radioenlaces', 'Radioenlaces', 'radio'],
   ['#/conexiones', 'Conexiones', 'link'], ['#/inventario', 'Inventario', 'box'], ['#/historial', 'Historial', 'history'],
 ];
 let mainEl = null;
@@ -93,7 +94,7 @@ async function changePassword() {
 }
 
 // ---------- Enrutado ----------
-const TITLES = { '': 'Inicio', mapa: 'Mapa geográfico', nodos: 'Nodos y racks', nodo: 'Nodo', fibra: 'Fibra óptica FTTH', radioenlaces: 'Radioenlaces', conexiones: 'Conexiones', inventario: 'Inventario', historial: 'Historial', usuarios: 'Usuarios' };
+const TITLES = { '': 'Inicio', mapa: 'Mapa geográfico', planta: 'Planta externa FTTH', nodos: 'Nodos y racks', nodo: 'Nodo', fibra: 'Fibra óptica FTTH', radioenlaces: 'Radioenlaces', conexiones: 'Conexiones', inventario: 'Inventario', historial: 'Historial', usuarios: 'Usuarios' };
 let routeToken = 0;
 
 function parseHash() {
@@ -114,13 +115,14 @@ async function route() {
   });
   document.getElementById('crumbs').replaceChildren(h('b', null, TITLES[section] || 'Smart Connection'));
   document.title = `${TITLES[section] || 'Documentación'} · Smart Connection`;
-  const view = h('div', { style: { height: section === 'mapa' ? '100%' : null } });
+  const view = h('div', { style: { height: (section === 'mapa' || section === 'planta') ? '100%' : null } });
   mainEl.replaceChildren(view);
   mainEl.scrollTop = 0;
   try {
     switch (section) {
       case '': await homeView(view); break;
       case 'mapa': await mapView(view, query); break;
+      case 'planta': await plantaView(view, query); break;
       case 'nodos': await nodesView(view); break;
       case 'nodo': await nodeView(view, Number(a), b, c, query); if (token === routeToken) { const n = view.querySelector('.page-head h2'); if (n) document.getElementById('crumbs').replaceChildren('Nodos › ', h('b', null, n.textContent)); } break;
       case 'fibra': await fiberView(view, query); break;

@@ -68,6 +68,24 @@ export function seedDemo() {
     [['Cliente · Familia Pérez', fNap1, 14.7058, -90.4855], ['Cliente · Tienda La Esquina', fNap1, 14.7053, -90.4849], ['Cliente · Escuela Rural', fNap1, 14.7060, -90.4859], ['Cliente · Carlos Ruiz', fNap2, 14.7104, -90.4757], ['Cliente · Ana Morales', fNap2, 14.7099, -90.4763]]
       .forEach(([name, parent, lat, lng], i) => f({ kind: 'client', name, parent_id: parent, lat, lng, code: `DEMO-C${i + 1}`, props: JSON.stringify({ onu_serial: `ZTEG${1000 + i}`, plan: '100 Mbps', potencia_rx_dbm: -21.5 - i * 0.4 }) }));
 
+    // Planta externa: postes y cables trazados sobre ellos (splitter → NAP)
+    const route = (name, parent, from, to, n, fibers) => {
+      const path = [];
+      for (let i = 0; i <= n; i++) {
+        const t = i / n, jitter = i === 0 || i === n ? 0 : Math.sin(i * 1.7) * 0.00012;
+        const lat = from[0] + (to[0] - from[0]) * t + jitter, lng = from[1] + (to[1] - from[1]) * t - jitter;
+        let pid = null;
+        if (i > 0 && i < n) pid = ins('poles', { code: `DEMO-P${String(++poleSeq).padStart(3, '0')}`, lat, lng, material: i % 3 ? 'concreto' : 'madera', height_m: 9, owner: 'Empresa eléctrica (demo)', status: 'operativo' });
+        path.push([lat, lng, pid]);
+      }
+      let m = 0;
+      for (let i = 1; i < path.length; i++) m += Math.hypot((path[i][0] - path[i - 1][0]) * 111320, (path[i][1] - path[i - 1][1]) * 107000);
+      f({ kind: 'cable', name, parent_id: parent, path: JSON.stringify(path), props: JSON.stringify({ tipo_cable: 'ADSS 12F', fibras_total: fibers, fibras_usadas: 2, longitud_m: Math.round(m), hilos: { 1: { e: 'usada', a: 'Splitter Norte' }, 2: { e: 'usada', a: 'NAP' }, 7: { e: 'reservada', a: '', n: 'Reserva' } } }) });
+    };
+    let poleSeq = 0;
+    route('Alimentador NAP-N1-01', fSpl, [14.7011, -90.4803], [14.7055, -90.4851], 7, 12);
+    route('Alimentador NAP-N1-02', fSpl, [14.7011, -90.4803], [14.7102, -90.4760], 9, 12);
+
     audit(null, 'crear', 'nodes', n1, 'Carga de datos de demostración');
   });
   console.log('Datos de demostración cargados (códigos DEMO-*).');

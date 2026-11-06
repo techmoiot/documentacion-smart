@@ -94,3 +94,23 @@ test('árbol de fibra: sin ciclos y con dependientes', async () => {
   assert.equal((await call('admin', 'PATCH', `/api/fiber/${olt.id}`, { parent_id: nap.id })).status, 400);
   assert.equal((await call('admin', 'GET', `/api/impact/fiber/${nap.id}`)).data.clients, 1);
 });
+
+test('planta externa: postes, cable con trazado y sincronización', async () => {
+  const p1 = (await call('admin', 'POST', '/api/poles', { lat: 14.61, lng: -90.51 })).data;
+  const p2 = (await call('admin', 'POST', '/api/poles', { lat: 14.611, lng: -90.511, code: 'POSTE-X' })).data;
+  assert.match(p1.code, /^P-\d+$/);
+  assert.equal((await call('admin', 'POST', '/api/poles', { lat: 'x', lng: 1 })).status, 400);
+  const cable = (await call('admin', 'POST', '/api/fiber', { kind: 'cable', name: 'Alim', path: [[14.61, -90.51, p1.id], [14.611, -90.511, p2.id]], props: { fibras_total: 12 } })).data;
+  assert.equal(cable.path.length, 2);
+  assert.equal((await call('admin', 'POST', '/api/fiber', { kind: 'cable', name: 'Mal', path: [[200, 0]] })).status, 400);
+  // mover un poste arrastra el vértice del cable
+  await call('admin', 'PATCH', `/api/poles/${p2.id}`, { lat: 14.62, lng: -90.52 });
+  let pl = (await call('admin', 'GET', '/api/planta')).data;
+  assert.deepEqual(pl.elements.find((e) => e.id === cable.id).path[1].slice(0, 2), [14.62, -90.52]);
+  assert.equal((await call('admin', 'GET', '/api/map')).data.poles.length >= 2, true);
+  // eliminar un poste conserva el trazado pero lo desvincula
+  await call('admin', 'DELETE', `/api/poles/${p2.id}`);
+  pl = (await call('admin', 'GET', '/api/planta')).data;
+  assert.equal(pl.elements.find((e) => e.id === cable.id).path[1][2], null);
+  assert.equal((await call('lector', 'POST', '/api/poles', { lat: 1, lng: 1 })).status, 403);
+});

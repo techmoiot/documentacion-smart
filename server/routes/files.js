@@ -11,8 +11,8 @@ import { wrap, bad, notFound, intParam } from '../http.js';
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const ENTITY_TABLE = { node: 'nodes', device: 'devices', rack: 'racks', radiolink: 'radiolinks', antenna: 'antennas', fiber: 'fiber_elements' };
-const ENTITY_AUDIT = { node: 'nodes', device: 'devices', rack: 'racks', radiolink: 'radiolinks', antenna: 'antennas', fiber: 'fiber' };
+const ENTITY_TABLE = { node: 'nodes', device: 'devices', rack: 'racks', radiolink: 'radiolinks', antenna: 'antennas', fiber: 'fiber_elements', pole: 'poles' };
+const ENTITY_AUDIT = { node: 'nodes', device: 'devices', rack: 'racks', radiolink: 'radiolinks', antenna: 'antennas', fiber: 'fiber', pole: 'poles' };
 
 const IMAGE_TYPES = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp' };
 const DOC_EXT = new Set(['.pdf', '.txt', '.csv', '.md', '.json', '.log', '.rsc', '.cfg', '.conf', '.docx', '.xlsx', '.pptx', '.zip', '.backup']);

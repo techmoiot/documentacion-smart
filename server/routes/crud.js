@@ -33,10 +33,26 @@ const exists = (table, id, label) => {
 };
 
 function withJson(def, r) {
-  if (r && def.json && typeof r[def.json] === 'string') {
-    try { r[def.json] = JSON.parse(r[def.json]); } catch { r[def.json] = {}; }
+  if (!r || !def.json) return r;
+  for (const [key, shape] of Object.entries(def.json)) {
+    if (typeof r[key] === 'string') {
+      try { r[key] = JSON.parse(r[key]); } catch { r[key] = shape === 'path' ? null : {}; }
+    }
   }
   return r;
+}
+
+/** Mantiene los trazados de cables al mover (lat/lng) o eliminar (null) un poste. */
+function syncPolePaths(poleId, lat, lng) {
+  for (const f of all('SELECT id, path FROM fiber_elements WHERE path IS NOT NULL')) {
+    let path;
+    try { path = JSON.parse(f.path); } catch { continue; }
+    let touched = false;
+    for (const pt of path) {
+      if (pt[2] === poleId) { if (lat == null) pt[2] = null; else { pt[0] = lat; pt[1] = lng; } touched = true; }
+    }
+    if (touched) run('UPDATE fiber_elements SET path = ? WHERE id = ?', JSON.stringify(path), f.id);
+  }
 }
 
 // ---------- Validaciones de dominio ----------
@@ -101,6 +117,10 @@ function validateRadiolink(data, current) {
 
 function validate(entity, data, current) {
   switch (entity) {
+    case 'poles':
+      if (data.lat != null && Math.abs(data.lat) > 90) throw bad('Latitud fuera de rango');
+      if (data.lng != null && Math.abs(data.lng) > 180) throw bad('Longitud fuera de rango');
+      break;
     case 'nodes':
       if (data.lat != null && (data.lat < -90 || data.lat > 90)) throw bad('Latitud fuera de rango');
       if (data.lng != null && (data.lng < -180 || data.lng > 180)) throw bad('Longitud fuera de rango');
@@ -172,6 +192,7 @@ function mount(entity, path = entity) {
         const r = run(`INSERT INTO ${def.table} (${cols.join(',')}) VALUES (${ph(cols)})`, ...cols.map((c) => data[c]));
         id = Number(r.lastInsertRowid);
         if (entity === 'devices') createPortGroups(id, req.body.port_groups);
+        if (entity === 'poles' && !data.code) run('UPDATE poles SET code = ? WHERE id = ?', `P-${String(id).padStart(4, '0')}`, id);
       });
     } catch (e) { throw e instanceof HttpError ? e : friendlyDbError(e); }
     const created = entity === 'connections' ? connectionById(id) : row(entity, id);
@@ -188,7 +209,7 @@ function mount(entity, path = entity) {
 
     // Los técnicos solo actualizan datos: no pueden reubicar ni reestructurar.
     if (req.user.role === 'technician') {
-      const structural = ['node_id', 'rack_id', 'rack_u', 'u_height', 'a_device_id', 'b_device_id', 'a_port_id', 'b_port_id', 'parent_id', 'a_antenna_id', 'b_antenna_id', 'layer', 'kind', 'units'];
+      const structural = ['lat', 'lng', 'path', 'node_id', 'rack_id', 'rack_u', 'u_height', 'a_device_id', 'b_device_id', 'a_port_id', 'b_port_id', 'parent_id', 'a_antenna_id', 'b_antenna_id', 'layer', 'kind', 'units'];
       if (structural.some((k) => k in data && data[k] !== current[k])) {
         throw new HttpError(403, 'Su rol permite actualizar datos, no modificar la estructura (ubicación o conexiones)');
       }
@@ -199,6 +220,7 @@ function mount(entity, path = entity) {
         validate(entity, data, current);
         const cols = Object.keys(data);
         run(`UPDATE ${def.table} SET ${cols.map((c) => `${c} = ?`).join(',')}, updated_at = datetime('now') WHERE id = ?`, ...cols.map((c) => data[c]), id);
+        if (entity === 'poles' && ('lat' in data || 'lng' in data)) syncPolePaths(id, data.lat ?? current.lat, data.lng ?? current.lng);
       });
     } catch (e) { throw e instanceof HttpError ? e : friendlyDbError(e); }
     const updated = entity === 'connections' ? connectionById(id) : row(entity, id);
@@ -209,7 +231,7 @@ function mount(entity, path = entity) {
   router.delete(`/${path}/:id`, require_('write'), wrap((req, res) => {
     const id = intParam(req.params.id);
     const current = row(entity, id);
-    try { run(`DELETE FROM ${def.table} WHERE id = ?`, id); } catch (e) { throw friendlyDbError(e); }
+    try { tx(() => { if (entity === 'poles') syncPolePaths(id, null, null); run(`DELETE FROM ${def.table} WHERE id = ?`, id); }); } catch (e) { throw friendlyDbError(e); }
     audit(req.user, 'eliminar', entity, id, `Eliminó ${def.label} «${current[def.nameField] ?? id}»`, current, null);
     res.json({ ok: true });
   }));

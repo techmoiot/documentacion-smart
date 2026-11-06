@@ -1,6 +1,6 @@
 // Mapa geográfico de infraestructura (Leaflet)
 import { api } from '../api.js';
-import { STATUS, NODE_TYPE } from '../catalog.js';
+import { STATUS, NODE_TYPE, cableColor } from '../catalog.js';
 import { h, btn, icon, clear, go, state, haversineKm, fmtKm, badge } from '../ui.js';
 import { showImpact } from '../shared.js';
 import { showLinkModal } from './radio.js';
@@ -22,7 +22,7 @@ export async function mapView(root, query = {}) {
   L.tileLayer(state.meta.tileUrl, { maxZoom: 19, attribution: state.meta.tileAttribution, referrerPolicy: 'strict-origin-when-cross-origin' }).addTo(map);
   L.control.scale({ imperial: false }).addTo(map);
 
-  const layers = { nodes: L.layerGroup().addTo(map), links: L.layerGroup().addTo(map), fiber: L.layerGroup().addTo(map), naps: L.layerGroup().addTo(map), clients: L.layerGroup(), nodeLinks: L.layerGroup().addTo(map), measure: L.layerGroup().addTo(map) };
+  const layers = { nodes: L.layerGroup().addTo(map), links: L.layerGroup().addTo(map), fiber: L.layerGroup().addTo(map), naps: L.layerGroup().addTo(map), poles: L.layerGroup(), clients: L.layerGroup(), nodeLinks: L.layerGroup().addTo(map), measure: L.layerGroup().addTo(map) };
   const typeVisible = Object.fromEntries(Object.keys(NODE_TYPE).map((k) => [k, true]));
   const markers = new Map();
 
@@ -89,6 +89,12 @@ export async function mapView(root, query = {}) {
   const coordOf = (f) => (f.lat != null && f.lng != null ? [f.lat, f.lng] : null);
   const nearestWithCoord = (f) => { let c = byId.get(f.parent_id); while (c && !coordOf(c)) c = byId.get(c.parent_id); return c; };
   for (const f of data.fiber) {
+    if (f.kind === 'cable' && f.path && f.path.length > 1) {
+      const fib = Number(f.props?.fibras_total) || 0;
+      L.polyline(f.path.map((q) => [q[0], q[1]]), { color: f.status === 'operativo' ? cableColor(fib) : sc(f.status), weight: 3.5, opacity: 0.9 })
+        .bindTooltip(`${f.name}${fib ? ` · ${fib} hilos` : ''}`, { sticky: true }).on('click', () => { if (!measuring) go(`#/planta?sel=${f.id}`); }).addTo(layers.fiber);
+      continue;
+    }
     const p = coordOf(f);
     if (!p) continue;
     const up = nearestWithCoord(f);
@@ -101,6 +107,11 @@ export async function mapView(root, query = {}) {
     if (f.kind === 'nap') mk(6, '#22c55e', layers.naps);
     else if (f.kind === 'splitter' || f.kind === 'closure') mk(5, '#ec4899', layers.naps);
     else if (f.kind === 'client') mk(3.5, '#e2e8f0', layers.clients);
+  }
+
+  for (const p of data.poles || []) {
+    L.circleMarker([p.lat, p.lng], { radius: 3.5, color: '#0a1322', weight: 1, fillColor: '#e2e8f0', fillOpacity: 1 }).bindTooltip(`Poste ${p.code}`)
+      .on('click', () => { if (!measuring) go(`#/planta?pole=${p.id}`); }).addTo(layers.poles);
   }
 
   // ---------- Enlaces físicos entre nodos ----------
@@ -132,7 +143,7 @@ export async function mapView(root, query = {}) {
     h('div', { class: 'row gap', style: { justifyContent: 'space-between' } }, h('strong', null, 'Infraestructura'), h('span', { class: 'muted small' }, `${placed.length} nodos`)),
     h('h5', null, 'Capas'),
     chk('Nodos y sitios', true, toggleLayer(layers.nodes)), chk('Radioenlaces', true, toggleLayer(layers.links), '#a78bfa'), chk('Recorridos de fibra', true, toggleLayer(layers.fiber), '#38bdf8'),
-    chk('NAP y splitters', true, toggleLayer(layers.naps), '#22c55e'), chk('Clientes FTTH', false, toggleLayer(layers.clients), '#e2e8f0'), chk('Enlaces entre nodos', true, toggleLayer(layers.nodeLinks), '#94a3b8'),
+    chk('NAP y splitters', true, toggleLayer(layers.naps), '#22c55e'), chk('Postes', false, toggleLayer(layers.poles), '#e2e8f0'), chk('Clientes FTTH', false, toggleLayer(layers.clients), '#e2e8f0'), chk('Enlaces entre nodos', true, toggleLayer(layers.nodeLinks), '#94a3b8'),
     h('h5', null, 'Tipo de nodo'),
     ...Object.entries(NODE_TYPE).map(([k, o]) => chk(o.label, true, (on) => { typeVisible[k] = on; refreshNodes(); }, o.color)),
     h('h5', null, 'Estado de enlaces'), ...Object.values(STATUS).map((o) => h('div', { class: 'small', style: { display: 'flex', gap: '8px', alignItems: 'center' } }, h('span', { class: 'dotc', style: { background: o.color } }), o.label)),

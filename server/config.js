@@ -15,3 +15,6 @@ export const COOKIE_SECURE = process.env.COOKIE_SECURE === '1';
 // Mapa base. Para operar sin Internet, apuntar a un servidor de teselas local.
 export const TILE_URL = process.env.TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 export const TILE_ATTRIBUTION = process.env.TILE_ATTRIBUTION || '&copy; OpenStreetMap';
+// Imagen satelital (útil para ubicar postes). Cambie la URL si usa otro proveedor.
+export const SAT_TILE_URL = process.env.SAT_TILE_URL || 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+export const SAT_ATTRIBUTION = process.env.SAT_ATTRIBUTION || 'Imágenes © Esri, Maxar, Earthstar Geographics';

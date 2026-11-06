@@ -115,3 +115,17 @@ export const TEMPLATES = [
   { id: 'radio', label: 'Equipo de radio (PoE)', type: 'radio', brand: '', model: '', u: 1, groups: [g('rj45', 'LAN', 2, '1G')] },
   { id: 'otro', label: 'Otro equipo (sin puertos)', type: 'other', brand: '', model: '', u: 1, groups: [] },
 ];
+
+export const POLE_MATERIAL = { concreto: 'Concreto', madera: 'Madera', metal: 'Metal', otro: 'Otro' };
+
+// Código de colores TIA-598 (fibras y tubos), 12 colores que se repiten
+export const FIBER_COLORS = [
+  ['Azul', '#2563eb'], ['Naranja', '#f97316'], ['Verde', '#22c55e'], ['Marrón', '#92400e'], ['Gris', '#9ca3af'], ['Blanco', '#f8fafc'],
+  ['Rojo', '#ef4444'], ['Negro', '#111827'], ['Amarillo', '#eab308'], ['Violeta', '#8b5cf6'], ['Rosa', '#f472b6'], ['Aqua', '#22d3ee'],
+];
+export const strandColor = (n) => FIBER_COLORS[(n - 1) % 12];
+export const tubeOf = (n) => Math.ceil(n / 12);
+export const STRAND_STATE = { libre: 'Libre', usada: 'Usada', reservada: 'Reservada', danada: 'Dañada' };
+
+// Color del cable según su capacidad (hilos)
+export const cableColor = (fibers) => (fibers > 96 ? '#e879f9' : fibers > 48 ? '#a78bfa' : fibers > 12 ? '#60a5fa' : '#22d3ee');

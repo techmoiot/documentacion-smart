@@ -3,8 +3,8 @@ import express from 'express';
 import { all, get } from '../db.js';
 import { require_ } from '../auth.js';
 import { wrap, bad, notFound, intParam, ph } from '../http.js';
-import { STATUSES, NODE_TYPES, DEVICE_TYPES, PORT_KINDS, FIBER_KINDS, LOGICAL_TYPES } from '../schema-meta.js';
-import { TILE_URL, TILE_ATTRIBUTION } from '../config.js';
+import { STATUSES, NODE_TYPES, DEVICE_TYPES, PORT_KINDS, FIBER_KINDS, LOGICAL_TYPES, POLE_MATERIALS } from '../schema-meta.js';
+import { TILE_URL, TILE_ATTRIBUTION, SAT_TILE_URL, SAT_ATTRIBUTION } from '../config.js';
 import { connectionById } from './crud.js';
 
 export const router = express.Router();
@@ -12,7 +12,7 @@ export const router = express.Router();
 router.get('/meta', wrap((_req, res) => {
   res.json({
     statuses: STATUSES, nodeTypes: NODE_TYPES, deviceTypes: DEVICE_TYPES, portKinds: PORT_KINDS,
-    fiberKinds: FIBER_KINDS, logicalTypes: LOGICAL_TYPES, tileUrl: TILE_URL, tileAttribution: TILE_ATTRIBUTION,
+    fiberKinds: FIBER_KINDS, logicalTypes: LOGICAL_TYPES, tileUrl: TILE_URL, tileAttribution: TILE_ATTRIBUTION, satUrl: SAT_TILE_URL, satAttribution: SAT_ATTRIBUTION, poleMaterials: POLE_MATERIALS,
   });
 }));
 
@@ -27,6 +27,7 @@ router.get('/stats', wrap((_req, res) => {
     antennas: c('SELECT COUNT(*) n FROM antennas'),
     radiolinks: c('SELECT COUNT(*) n FROM radiolinks'),
     fiberElements: c('SELECT COUNT(*) n FROM fiber_elements'),
+    poles: c('SELECT COUNT(*) n FROM poles'),
     clients: c("SELECT COUNT(*) n FROM fiber_elements WHERE kind = 'client'"),
     problems: all(
       `SELECT 'nodo' AS entity, 'nodes' AS type, id, name, status FROM nodes WHERE status <> 'operativo'
@@ -54,17 +55,36 @@ router.get('/map', wrap((_req, res) => {
      JOIN antennas ab ON ab.id = r.b_antenna_id JOIN nodes nb ON nb.id = ab.node_id`);
   // Fibra: cada elemento con coordenadas propias o las de su nodo
   const fiber = all(
-    `SELECT f.id, f.kind, f.name, f.parent_id, f.status, f.props,
+    `SELECT f.id, f.kind, f.name, f.parent_id, f.status, f.props, f.path,
        COALESCE(f.lat, n.lat) AS lat, COALESCE(f.lng, n.lng) AS lng
      FROM fiber_elements f LEFT JOIN nodes n ON n.id = f.node_id`);
-  for (const f of fiber) { try { f.props = JSON.parse(f.props); } catch { f.props = {}; } }
+  for (const f of fiber) {
+    try { f.props = JSON.parse(f.props); } catch { f.props = {}; }
+    try { f.path = f.path ? JSON.parse(f.path) : null; } catch { f.path = null; }
+  }
+  const poles = all('SELECT id, code, lat, lng, material, status FROM poles');
   // Conexiones entre nodos (enlaces físicos que cruzan sitios)
   const nodeLinks = all(
     `SELECT c.id, c.status, c.medium, c.speed, c.cable_id, da.node_id AS a_node_id, db_.node_id AS b_node_id,
             da.name AS a_device_name, db_.name AS b_device_name
      FROM connections c JOIN devices da ON da.id = c.a_device_id JOIN devices db_ ON db_.id = c.b_device_id
      WHERE c.layer = 'physical' AND da.node_id IS NOT NULL AND db_.node_id IS NOT NULL AND da.node_id <> db_.node_id`);
-  res.json({ nodes, radiolinks, fiber, nodeLinks });
+  res.json({ nodes, radiolinks, fiber, nodeLinks, poles });
+}));
+
+// Planta externa: postes + elementos de fibra georreferenciados con su trazado
+router.get('/planta', wrap((_req, res) => {
+  const poles = all('SELECT * FROM poles');
+  const elements = all(
+    `SELECT f.id, f.kind, f.name, f.code, f.parent_id, f.node_id, f.device_id, f.status, f.props, f.path, f.notes,
+       f.lat AS own_lat, f.lng AS own_lng, COALESCE(f.lat, n.lat) AS lat, COALESCE(f.lng, n.lng) AS lng
+     FROM fiber_elements f LEFT JOIN nodes n ON n.id = f.node_id`);
+  for (const f of elements) {
+    try { f.props = JSON.parse(f.props); } catch { f.props = {}; }
+    try { f.path = f.path ? JSON.parse(f.path) : null; } catch { f.path = null; }
+  }
+  const nodes = all('SELECT id, code, name, type, status, lat, lng FROM nodes WHERE lat IS NOT NULL');
+  res.json({ poles, elements, nodes });
 }));
 
 // ---------- Búsqueda global ----------
@@ -91,6 +111,8 @@ router.get('/search', wrap((req, res) => {
     out.push({ type: 'antena', id: r.id, title: r.name, sub: [r.ip, r.node_name].filter(Boolean).join(' · '), status: r.status, href: `#/radioenlaces?antenna=${r.id}` });
   for (const r of all(`SELECT id, name, link_type, status FROM radiolinks WHERE name ${L} LIMIT 10`, like))
     out.push({ type: 'radioenlace', id: r.id, title: r.name, sub: r.link_type, status: r.status, href: `#/radioenlaces?link=${r.id}` });
+  for (const r of all(`SELECT id, code, name, owner, status FROM poles WHERE code ${L} OR name ${L} OR owner ${L} LIMIT 10`, like, like, like))
+    out.push({ type: 'poste', id: r.id, title: r.code, sub: [r.name, r.owner].filter(Boolean).join(' · '), status: r.status, href: `#/planta?pole=${r.id}` });
   for (const r of all(`SELECT id, kind, name, code, status FROM fiber_elements WHERE name ${L} OR code ${L} OR props ${L} LIMIT 20`, like, like, like))
     out.push({ type: r.kind === 'client' ? 'cliente' : 'fibra', id: r.id, title: r.name, sub: [r.kind, r.code].filter(Boolean).join(' · '), status: r.status, href: `#/fibra?sel=${r.id}` });
   res.json(out.slice(0, 60));

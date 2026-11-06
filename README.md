@@ -117,3 +117,14 @@ npm test
 - Las plantillas de equipo son orientativas (número de puertos y U): ajústelas al equipo real al crearlo.
 - El mapa base usa OpenStreetMap; sin Internet, configure `TILE_URL` con un servidor de teselas local.
 - Haga respaldos periódicos (`document backup`) y cópielos fuera del contenedor (snapshot del LXC o `rsync`).
+
+## Planta externa FTTH (postes y cables, estilo OZmap)
+
+Menú **Planta externa** (`#/planta`):
+
+- **Postes**: herramienta *Poste* → clic en el mapa. Código automático (`P-0001`), material, altura, propietario, fotos e historial. Al arrastrar un poste, los cables que pasan por él lo siguen.
+- **Cables**: herramienta *Cable de fibra* → clic sobre postes (se ajustan solos) o puntos libres; doble clic para terminar. Guarda trazado, longitud, número de hilos y el elemento del que nace (OLT, splitter, caja, otro cable). Se puede **editar el trazado** (arrastrar vértices, clic en la línea para añadir, doble clic para quitar).
+- **Cajas y clientes**: NAP, cajas de empalme/distribución, splitters y clientes se colocan en el mapa; si caen sobre un poste quedan vinculados a él. Todo se puede arrastrar para reubicar.
+- **Hilos**: cada cable muestra sus hilos con el código de colores TIA-598 (tubo y color); marque cada hilo como libre/usado/reservado/dañado y a qué PON, splitter o cliente está asignado.
+- Vista **satelital** (Esri; configurable con `SAT_TILE_URL`) para ubicar postes. Los cables y postes también aparecen en el **Mapa** general.
+- Los elementos siguen formando el árbol FTTH: *Ver en árbol* e *Impacto* funcionan igual.
