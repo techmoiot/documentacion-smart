@@ -10,7 +10,7 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "seed-demo": "node server/cli.js seed-demo",
-    "test": "node --test test/"
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
   },
   "dependencies": {
     "express": "^4.21.2"
