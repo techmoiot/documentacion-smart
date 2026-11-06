@@ -254,3 +254,9 @@ table.t tbody tr { cursor: pointer; } table.t tbody tr:hover { background: #1523
 .proj-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; margin-top: 14px; }
 .card.proj { --pc: #38bdf8; padding: 14px 16px; border-top: 4px solid var(--pc); } .card.proj.active { outline: 2px solid var(--pc); }
 .card.proj .pdot { width: 12px; height: 12px; border-radius: 50%; background: var(--pc); }
+
+.trace-sum { display: flex; gap: 18px; flex-wrap: wrap; padding: 8px 2px 10px; } .trace-sum b { font-size: 18px; }
+table.t.trace td { padding: 5px 8px; } table.t.trace tr.end td { background: #0f2a1e; }
+.splice-wrap { overflow: auto; max-height: 70vh; background: #0a1322; border: 1px solid var(--line); border-radius: 10px; }
+.splice-wrap svg text { font: 11px system-ui, sans-serif; fill: #cbd5e1; } .splice-wrap .st { cursor: pointer; } .splice-wrap .st:hover rect.sw { stroke: #fff; }
+.splice-wrap .fus { cursor: pointer; fill: none; stroke-width: 2.4; } .splice-wrap .fus:hover { stroke-width: 4.5; }

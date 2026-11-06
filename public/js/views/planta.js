@@ -6,6 +6,8 @@ import { filesWidget, historyList, showImpact } from '../shared.js';
 import { strandsEditor } from '../strands.js';
 import { addBaseMaps } from '../basemaps.js';
 import { importKmzWizard } from './import-kmz.js';
+import { upRows, downRows, traceCard, posOf } from '../trace.js';
+import { openSplice } from '../splice.js';
 
 const L = window.L;
 const sc = (st) => STATUS[st]?.color || '#94a3b8';
@@ -29,7 +31,7 @@ export async function plantaView(root, query = {}) {
   addBaseMaps(map, { maxNative: 19 });
   L.control.scale({ imperial: false }).addTo(map);
 
-  const G = { cables: L.layerGroup().addTo(map), poles: L.layerGroup().addTo(map), els: L.layerGroup().addTo(map), draft: L.layerGroup().addTo(map), edit: L.layerGroup().addTo(map) };
+  const G = { cables: L.layerGroup().addTo(map), poles: L.layerGroup().addTo(map), els: L.layerGroup().addTo(map), trace: L.layerGroup().addTo(map), draft: L.layerGroup().addTo(map), edit: L.layerGroup().addTo(map) };
   let tool = 'select';        // select | pole | cable | nap | closure | splitter | client
   let draft = [];             // vértices del cable en trazado: {lat,lng,pole}
   let selected = null;        // {type:'pole'|'el', id}
@@ -144,6 +146,9 @@ export async function plantaView(root, query = {}) {
     if (e.notes) rows.push(['Notas', e.notes]);
     const body = h('div', null, props(rows),
       h('div', { class: 'row gap wrap', style: { margin: '10px 0' } },
+        btn('Ruta desde el nodo', { ic: 'fiber', kind: 'primary', title: 'Resalta el recorrido de la fibra desde el nodo/OLT hasta este elemento', onClick: () => showTrace(e, 'up') }),
+        btn('Hasta el final', { ic: 'fiber', title: 'Resalta todo lo que cuelga de este elemento hasta los clientes', onClick: () => showTrace(e, 'down') }),
+        ['closure', 'nap', 'splitter'].includes(e.kind) ? btn('Diagrama de empalmes', { ic: 'edit', onClick: () => openSplice(e, data.elements, { onChanged: () => reload() }) }) : null,
         btn('Ver en árbol FTTH', { ic: 'fiber', onClick: () => go(`#/fibra?sel=${e.id}`) }),
         btn('Impacto', { ic: 'alert', onClick: () => showImpact('fiber', e.id) }),
         e.kind === 'cable' && editable ? btn('Editar trazado', { ic: 'edit', onClick: () => startEditPath(e) }) : null,
@@ -177,8 +182,41 @@ export async function plantaView(root, query = {}) {
     if (await guard(() => api.del(`/api/fiber/${e.id}`))) { closePanel(true); selected = null; toast('Elemento eliminado'); reload(); }
   }
 
+  // ---------- Seguimiento de la fibra ----------
+  function clearTrace() { G.trace.clearLayers(); }
+  function showTrace(e, mode) {
+    clearTrace();
+    const byId = elById();
+    const rows = mode === 'up' ? upRows(e, byId) : downRows(e, data.elements);
+    const els = rows.map((r) => r.e);
+    const bounds = [];
+    for (const x of els) {
+      if (x.kind === 'cable' && x.path?.length > 1) {
+        const pts = x.path.map((p) => [p[0], p[1]]);
+        L.polyline(pts, { color: '#facc15', weight: 11, opacity: 0.55, interactive: false }).addTo(G.trace);
+        L.polyline(pts, { color: '#fff7b0', weight: 3, opacity: 1, dashArray: '2 10', className: 'rl-flow', interactive: false }).addTo(G.trace);
+        bounds.push(...pts);
+      } else {
+        const p = posOf(x);
+        if (p) { L.circleMarker(p, { radius: 14, color: '#facc15', weight: 3, fillColor: '#facc15', fillOpacity: 0.2, interactive: false }).addTo(G.trace); bounds.push(p); }
+      }
+      const par = x.parent_id != null ? byId.get(x.parent_id) : null;
+      if (par && els.includes(par) && !(x.kind === 'cable' && x.path?.length > 1) && !(par.kind === 'cable' && par.path?.length > 1)) {
+        const a = posOf(par), b = posOf(x);
+        if (a && b && (a[0] !== b[0] || a[1] !== b[1])) L.polyline([a, b], { color: '#facc15', weight: 4, opacity: 0.8, dashArray: '6 8', interactive: false }).addTo(G.trace);
+      }
+    }
+    if (bounds.length) map.fitBounds(L.latLngBounds(bounds).pad(0.2), { maxZoom: 19 });
+    const title = mode === 'up' ? `Desde el nodo hasta «${e.name}»` : `Desde «${e.name}» hasta los finales`;
+    openPanel(`Ruta de fibra`, h('div', null, traceCard(rows, { title }),
+      h('div', { class: 'row gap wrap', style: { marginTop: '10px' } }, btn(mode === 'up' ? 'Ver hasta el final' : 'Ruta desde el nodo', { onClick: () => showTrace(e, mode === 'up' ? 'down' : 'up') }), btn('Quitar resaltado', { onClick: () => { clearTrace(); closePanel(true); selected = null; draw(); } }))),
+      { subtitle: e.name, onClose: clearTrace });
+    setTimeout(() => map.invalidateSize(), 80);
+  }
+
   // ---------- Herramientas ----------
   function setTool(t) {
+    clearTrace();
     if (editing) cancelEdit();
     if (draft.length) cancelDraft();
     tool = t;

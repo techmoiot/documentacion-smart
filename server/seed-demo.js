@@ -84,11 +84,13 @@ export function seedDemo() {
       }
       let m = 0;
       for (let i = 1; i < path.length; i++) m += Math.hypot((path[i][0] - path[i - 1][0]) * 111320, (path[i][1] - path[i - 1][1]) * 107000);
-      f({ kind: 'cable', name, parent_id: parent, path: JSON.stringify(path), props: JSON.stringify({ tipo_cable: 'ADSS 12F', fibras_total: fibers, fibras_usadas: 2, longitud_m: Math.round(m), hilos: { 1: { e: 'usada', a: 'Splitter Norte' }, 2: { e: 'usada', a: 'NAP' }, 7: { e: 'reservada', a: '', n: 'Reserva' } } }) });
+      return f({ kind: 'cable', name, parent_id: parent, path: JSON.stringify(path), props: JSON.stringify({ tipo_cable: 'ADSS 12F', fibras_total: fibers, fibras_usadas: 2, longitud_m: Math.round(m), hilos: { 1: { e: 'usada', a: 'Splitter Norte' }, 2: { e: 'usada', a: 'NAP' }, 7: { e: 'reservada', a: '', n: 'Reserva' } } }) });
     };
     let poleSeq = 0;
-    route('Alimentador NAP-N1-01', fSpl, [14.7011, -90.4803], [14.7055, -90.4851], 7, 12);
-    route('Alimentador NAP-N1-02', fSpl, [14.7011, -90.4803], [14.7102, -90.4760], 9, 12);
+    const cab1 = route('Alimentador NAP-N1-01', fSpl, [14.7011, -90.4803], [14.7055, -90.4851], 7, 12);
+    const cab2 = route('Alimentador NAP-N1-02', fSpl, [14.7011, -90.4803], [14.7102, -90.4760], 9, 12);
+    run('UPDATE fiber_elements SET parent_id = ? WHERE id = ?', cab1, fNap1);
+    run('UPDATE fiber_elements SET parent_id = ? WHERE id = ?', cab2, fNap2);
 
     audit(null, 'crear', 'nodes', n1, 'Carga de datos de demostración');
   });
