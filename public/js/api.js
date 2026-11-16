@@ -11,9 +11,9 @@ export const projectCtx = {
 };
 
 async function request(method, url, body, extra = {}) {
-  const opts = { method, headers: { 'X-Requested-With': 'SmartDoc', 'X-Project': projectCtx.id }, credentials: 'same-origin', ...extra };
+  const opts = { method, headers: { 'X-Requested-With': 'SmartDoc', 'X-Project': extra.project ?? projectCtx.id }, credentials: 'same-origin', ...extra };
   if (extra.target) opts.headers['X-Project-Target'] = String(extra.target);
-  delete opts.target; delete opts.retried;
+  delete opts.target; delete opts.retried; delete opts.project;
   if (body !== undefined && !extra.raw) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
@@ -33,10 +33,12 @@ async function request(method, url, body, extra = {}) {
   return data;
 }
 
+// `extra.project`: sustituye el proyecto activo en esa llamada ('all' o ids separados por coma).
+// `extra.target`: proyecto donde crear el elemento nuevo.
 export const api = {
-  get: (url) => request('GET', url),
-  post: (url, body) => request('POST', url, body ?? {}),
-  patch: (url, body) => request('PATCH', url, body ?? {}),
+  get: (url, extra) => request('GET', url, undefined, extra),
+  post: (url, body, extra) => request('POST', url, body ?? {}, extra),
+  patch: (url, body, extra) => request('PATCH', url, body ?? {}, extra),
   put: (url, body) => request('PUT', url, body ?? {}),
   del: (url) => request('DELETE', url),
   upload: (url, file) => request('POST', url, undefined, { raw: file }),

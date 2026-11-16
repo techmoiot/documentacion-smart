@@ -1,5 +1,5 @@
 // Planta externa FTTH (estilo OZmap): postes, cables trazados sobre postes, cajas y clientes en el mapa
-import { api } from '../api.js';
+import { api, projectCtx } from '../api.js';
 import { STATUS, FIBER_KIND, FIBER_PROPS, POLE_MATERIAL, cableColor } from '../catalog.js';
 import { h, btn, clear, go, state, can, haversineKm, fmtKm, badge, props, openPanel, closePanel, formModal, confirmBox, guard, toast } from '../ui.js';
 import { filesWidget, historyList, showImpact } from '../shared.js';
@@ -18,8 +18,29 @@ const fmtM = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2)}
 
 export async function plantaView(root, query = {}) {
   clear(root);
-  let data = await api.get('/api/planta');
   const editable = can('write');
+
+  // Proyectos visibles en este mapa (selección propia de la vista, se recuerda entre visitas;
+  // por defecto parte de lo elegido en el selector global de la barra superior).
+  const projects = state.projects || [];
+  const allIds = projects.map((p) => p.id);
+  const PKEY = 'sd_planta_projects';
+  const initialShown = () => {
+    try {
+      const v = JSON.parse(localStorage.getItem(PKEY));
+      if (Array.isArray(v)) { const ok = v.filter((id) => allIds.includes(id)); if (ok.length || !v.length) return ok; }
+    } catch { /* sin almacenamiento */ }
+    const g = projectCtx.id;
+    const ids = g === 'all' ? allIds : String(g).split(',').map(Number).filter((id) => allIds.includes(id));
+    return ids.length ? ids : allIds;
+  };
+  let shown = initialShown();
+  const saveShown = () => { try { localStorage.setItem(PKEY, JSON.stringify(shown)); } catch { /* sin almacenamiento */ } };
+  async function fetchData() {
+    if (!shown.length) return { poles: [], elements: [], nodes: [] };
+    return api.get('/api/planta', { project: shown.length === allIds.length ? 'all' : shown.join(',') });
+  }
+  let data = await fetchData();
 
   const mapEl = h('div', { id: 'map' });
   const ctl = h('div', { class: 'tool-ctl' });
@@ -41,7 +62,31 @@ export async function plantaView(root, query = {}) {
   const poleById = () => new Map(data.poles.map((p) => [p.id, p]));
   const elById = () => new Map(data.elements.map((e) => [e.id, e]));
 
-  async function reload() { data = await api.get('/api/planta'); draw(); }
+  let reloadSeq = 0;
+  async function reload() {
+    const n = ++reloadSeq;
+    const d = await fetchData();
+    if (n !== reloadSeq) return; // llegó una respuesta más nueva (se cambió la selección rápido)
+    data = d; draw();
+  }
+
+  // Crear en el proyecto correcto: el único visible, o se pregunta cuando hay varios.
+  async function postNew(url, body) {
+    let target = shown.length === 1 ? shown[0] : null;
+    if (!target) { target = await projectCtx.ask?.(); if (!target) return null; }
+    const created = await guard(() => api.post(url, body, { target }));
+    if (created && !shown.includes(target)) { shown = allIds.filter((id) => id === target || shown.includes(id)); saveShown(); renderProjList(); }
+    return created;
+  }
+
+  async function setShown(ids) {
+    shown = allIds.filter((id) => ids.includes(id));
+    saveShown(); renderProjList();
+    closePanel(true); selected = null; clearTrace();
+    if (draft.length) cancelDraft();
+    if (editing) cancelEdit();
+    await reload(); fit();
+  }
 
   // ---------- Dibujo ----------
   function poleIcon(p, sel) {
@@ -283,7 +328,7 @@ export async function plantaView(root, query = {}) {
       const v = await formModal({ title: 'Nuevo poste', fields: poleFields() });
       if (!v) return;
       v.lat = ll.lat; v.lng = ll.lng;
-      const created = await guard(() => api.post('/api/poles', v));
+      const created = await postNew('/api/poles', v);
       if (created) { toast(`Poste ${created.code} creado`); await reload(); }
       return;
     }
@@ -310,7 +355,7 @@ export async function plantaView(root, query = {}) {
     if (near) pr.poste_id = near.id;
     const body = { kind, name: v.name, status: v.status, lat: near ? near.lat : ll.lat, lng: near ? near.lng : ll.lng, props: pr };
     if (v.parent_id) body.parent_id = Number(v.parent_id);
-    const created = await guard(() => api.post('/api/fiber', body));
+    const created = await postNew('/api/fiber', body);
     if (created) { toast(`${k.label} creado${near ? ' en poste ' + near.code : ''}`); await reload(); }
   }
 
@@ -359,7 +404,7 @@ export async function plantaView(root, query = {}) {
     if (v.tipo_cable) pr.tipo_cable = v.tipo_cable;
     const body = { kind: 'cable', name: v.name, status: v.status, path, props: pr };
     if (v.parent_id) body.parent_id = Number(v.parent_id);
-    const created = await guard(() => api.post('/api/fiber', body));
+    const created = await postNew('/api/fiber', body);
     if (created) { toast('Cable creado'); cancelDraft(); setTool('select'); await reload(); selectEl(created.id); }
   }
 
@@ -417,6 +462,18 @@ export async function plantaView(root, query = {}) {
   const stats = h('div', { class: 'muted small', style: { padding: '0 4px' } });
   const toolBtn = (key, label, ic) => (toolBtns[key] = btn(label, { ic, onClick: () => setTool(key) }));
   ctl.append(h('strong', { style: { padding: '2px 4px' } }, 'Planta externa'), stats);
+  const projBox = h('div', { class: 'proj-pick' });
+  function renderProjList() {
+    clear(projBox);
+    if (!projects.length) { projBox.append(h('p', { class: 'muted small' }, 'No tiene proyectos asignados.')); return; }
+    projBox.append(h('div', { class: 'row gap' }, btn('Todos', { onClick: () => setShown(allIds) }), btn('Ninguno', { onClick: () => setShown([]) })));
+    for (const p of projects) {
+      const i = h('input', { type: 'checkbox', checked: shown.includes(p.id), onchange: () => setShown(i.checked ? [...shown, p.id] : shown.filter((x) => x !== p.id)) });
+      projBox.append(h('label', { title: p.name }, i, h('span', { class: 'dotc', style: { background: p.color } }), h('span', { class: 'pname' }, p.name)));
+    }
+  }
+  ctl.append(h('h5', null, 'Proyectos en el mapa'), projBox);
+  renderProjList();
   toolBtns.select = btn('Seleccionar', { ic: 'map', onClick: () => setTool('select') });
   toolBtns.select.classList.add('on');
   ctl.append(toolBtns.select);
@@ -455,6 +512,12 @@ export async function plantaView(root, query = {}) {
   undoUI();
   draw(); fit();
   setTimeout(() => map.invalidateSize(), 60);
-  if (query.pole) { const p = poleById().get(Number(query.pole)); if (p) { map.setView([p.lat, p.lng], 19); selectPole(p.id); } }
-  else if (query.sel) { const e = elById().get(Number(query.sel)); if (e) selectEl(e.id); }
+  // Enlaces directos (#/planta?pole=… / ?sel=…): si el elemento es de un proyecto oculto, se muestran todos.
+  if (query.pole || query.sel) {
+    const find = () => (query.pole ? poleById().get(Number(query.pole)) : elById().get(Number(query.sel)));
+    if (!find() && shown.length < allIds.length) { shown = allIds; renderProjList(); await reload(); }
+    const it = find();
+    if (it && query.pole) { map.setView([it.lat, it.lng], 19); selectPole(it.id); }
+    else if (it) selectEl(it.id);
+  }
 }
