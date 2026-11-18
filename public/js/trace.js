@@ -52,31 +52,51 @@ export function traceCard(rows, { title } = {}) {
     h('tbody', null, rows.map((r, i) => h('tr', { class: r.e.kind === 'client' ? 'end' : '' },
       h('td', null, String(i + 1)),
       h('td', { style: { paddingLeft: `${8 + (r.depth || 0) * 12}px` } }, h('span', { class: 'chip', style: { '--c': FIBER_KIND[r.e.kind]?.color } }, FIBER_KIND[r.e.kind]?.label.split(' /')[0] || r.e.kind), ' ', r.e.name),
-      h('td', null, r.e.kind === 'cable' ? `${Math.round(cableLenM(r.e))} m${r.e.props?.fibras_total ? ` · ${r.e.props.fibras_total}F` : ''}` : r.e.kind === 'splitter' ? (r.e.props?.relacion || '') : ''),
+      h('td', null, r.loop ? 'lazo' : r.e.kind === 'cable' ? `${Math.round(cableLenM(r.e))} m${r.e.props?.fibras_total ? ` · ${r.e.props.fibras_total}F` : ''}` : r.e.kind === 'splitter' ? (r.e.props?.relacion || '') : ''),
       h('td', null, r.own ? `${r.own.toFixed(2)} dB` : ''), h('td', null, `${r.cumLoss.toFixed(1)} dB`)))));
   return h('div', null, title ? h('h4', { style: { marginTop: 0 } }, title) : null, summary, h('div', { class: 'table-wrap', style: { maxHeight: '45vh' } }, table),
     h('p', { class: 'muted small' }, `Estimación: ${DB_PER_KM} dB/km, splitters según su relación y ${DB_JUNCTION} dB por caja/ODF. Ajuste «Pérdida de inserción» en cada splitter para afinar.`));
 }
 
+export const DB_LOOP = 0.2; // jumper dentro del ODF: dos conectores más
+
+/** Fila intermedia «↺ lazo» si el ODF del elemento tiene un puerto unido a otro puerto del mismo ODF. */
+export function loopStep(e, loops = []) {
+  if (e.kind !== 'odf' || e.device_id == null || e.port_id == null) return null;
+  const l = loops.find((x) => x.device_id === e.device_id && (x.a_port_id === e.port_id || x.b_port_id === e.port_id));
+  if (!l) return null;
+  const [from, to] = l.a_port_id === e.port_id ? [l.a_port, l.b_port] : [l.b_port, l.a_port];
+  const how = [l.medium, l.loop_reason].filter(Boolean).join(' · ');
+  return { e: { kind: 'odf', name: `↺ Lazo en ${l.device_name}: ${from} → ${to}${how ? ` (${how})` : ''}`, props: {} }, own: DB_LOOP, loop: true };
+}
+
 /** Filas de la ruta hacia un elemento (desde el nodo). */
-export function upRows(el, byId) {
+export function upRows(el, byId, loops = []) {
   let cumLen = 0, cumLoss = 0;
-  return chainTo(el, byId).map((e) => {
+  const out = [];
+  for (const e of chainTo(el, byId)) {
     const own = lossOf(e); cumLoss += own; if (e.kind === 'cable') cumLen += cableLenM(e);
-    return { e, own, cumLoss, cumLen };
-  });
+    out.push({ e, own, cumLoss, cumLen });
+    const st = loopStep(e, loops);
+    if (st) { cumLoss += st.own; out.push({ ...st, cumLoss, cumLen }); }
+  }
+  return out;
 }
 
 /** Filas del árbol hacia abajo (hasta los finales), con pérdida acumulada por rama. */
-export function downRows(el, elements) {
+export function downRows(el, elements, loops = []) {
   const sub = subtreeOf(el, elements);
   const stack = []; // acumulados por profundidad
   const hasKid = new Set(elements.map((e) => e.parent_id));
-  return sub.map(({ e, depth }) => {
+  const out = [];
+  for (const { e, depth } of sub) {
     const prev = depth ? stack[depth - 1] : { loss: 0, len: 0 };
     const own = lossOf(e);
     const acc = { loss: prev.loss + own, len: prev.len + (e.kind === 'cable' ? cableLenM(e) : 0) };
+    out.push({ e, depth, own, cumLoss: acc.loss, cumLen: acc.len, leaf: !hasKid.has(e.id) });
+    const st = loopStep(e, loops);
+    if (st) { acc.loss += st.own; out.push({ ...st, depth: depth + 0.5, cumLoss: acc.loss, cumLen: acc.len }); }
     stack[depth] = acc;
-    return { e, depth, own, cumLoss: acc.loss, cumLen: acc.len, leaf: !hasKid.has(e.id) };
-  });
+  }
+  return out;
 }

@@ -77,12 +77,21 @@ test('conexión física: un puerto admite un solo cable', async () => {
 test('ODF: puede conectar dos de sus puertos; ningún otro equipo puede conectarse a sí mismo', async () => {
   const odf = (await call('admin', 'POST', '/api/devices', { name: 'ODF-1', type: 'odf', rack_id: rack.id, rack_u: 8, u_height: 1, port_groups: [{ kind: 'fiber', prefix: 'F', count: 6 }] })).data;
   const po = (await call('admin', 'GET', `/api/devices/${odf.id}/full`)).data.ports;
-  const mk = (x, y, dev = odf.id) => call('admin', 'POST', '/api/connections', { layer: 'physical', a_device_id: dev, a_port_id: x, b_device_id: dev, b_port_id: y, medium: 'patch cord' });
+  const mk = (x, y, dev = odf.id) => call('admin', 'POST', '/api/connections', { layer: 'physical', a_device_id: dev, a_port_id: x, b_device_id: dev, b_port_id: y, medium: 'patch cord', loop_reason: 'cruce' });
   assert.equal((await mk(po[0].id, po[0].id)).status, 400);            // mismo puerto
   const ok = await mk(po[0].id, po[1].id);
   assert.equal(ok.status, 201);                                          // puerto A -> puerto B
   assert.equal((await mk(po[1].id, po[2].id)).status, 409);            // po[1] ya ocupado como destino
   assert.equal((await mk(po[2].id, po[0].id)).status, 409);            // po[0] ya ocupado como origen
+  // el lazo aparece en /planta y el seguimiento lo muestra como salto
+  const pl = (await call('admin', 'GET', '/api/planta')).data;
+  assert.equal(pl.odfLoops.length, 1);
+  assert.equal(pl.odfLoops[0].loop_reason, 'cruce');
+  const { upRows } = await import('../public/js/trace.js');
+  const el = { id: 1, kind: 'odf', name: 'ODF', parent_id: null, device_id: odf.id, port_id: po[0].id, props: {} };
+  const rows = upRows(el, new Map([[1, el]]), pl.odfLoops);
+  assert.equal(rows.length, 2);
+  assert.match(rows[1].e.name, /Lazo en ODF-1: F1 → F2/);
   const l = (await call('admin', 'GET', `/api/devices/${odf.id}/full`)).data.ports;
   assert.equal(l[0].link.remote_port_id, po[1].id);
   assert.equal(l[1].link.remote_port_id, po[0].id);

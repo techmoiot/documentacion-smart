@@ -181,3 +181,5 @@ La pérdida usa 0,35 dB/km, la pérdida de inserción de cada splitter (o la tí
 ## ODF conectado sobre sí mismo
 
 Un **ODF** puede unir un puerto con otro puerto **del mismo ODF** (jumper / patch cord). Se hace como cualquier conexión («Conectar este puerto…» en Rack o Nodo): al elegir el mismo ODF como destino, se excluye el puerto de origen. Ningún otro tipo de equipo puede conectarse a sí mismo, y un puerto solo admite una conexión (como origen o destino). La validación también está en el backend. En el rack y en la topología del nodo el lazo se dibuja en ámbar con línea de trazo mixto y la etiqueta «↺ lazo».
+
+El lazo guarda el **tipo de cable** (campo «Medio físico»: patch cord, jumper, pigtail), el **motivo** (cruce, prueba, reasignación de hilos, otro) y las observaciones. En **Planta externa → seguimiento de fibra**, si un elemento ODF tiene asignado el equipo y el puerto que forman parte de un lazo, la ruta muestra un salto intermedio «↺ Lazo en ODF: F3 → F4» con una pérdida estimada de 0.2 dB.

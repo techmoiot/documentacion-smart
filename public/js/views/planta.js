@@ -264,8 +264,9 @@ export async function plantaView(root, query = {}) {
   function showTrace(e, mode) {
     clearTrace();
     const byId = elById();
-    const rows = mode === 'up' ? upRows(e, byId) : downRows(e, data.elements);
-    const els = rows.map((r) => r.e);
+    const loops = data.odfLoops || [];
+    const rows = mode === 'up' ? upRows(e, byId, loops) : downRows(e, data.elements, loops);
+    const els = rows.filter((r) => !r.loop).map((r) => r.e);
     const bounds = [];
     for (const x of els) {
       if (x.kind === 'cable' && x.path?.length > 1) {

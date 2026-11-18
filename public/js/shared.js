@@ -250,7 +250,8 @@ export async function connectionForm({ conn = null, preset = {} } = {}) {
       { name: 'layer', label: 'Capa', type: 'select', options: [['physical', 'Física (cable / fibra)'], ['logical', 'Lógica (VLAN, interfaz virtual, troncal, red IP…)']] },
       { name: 'conn_type', label: 'Tipo de conexión', hint: 'Ej.: uplink, troncal, PON, gestión, VLAN, red IP' },
       { name: 'ends', type: 'custom', label: '', render: () => ({ el: h('div', { class: 'endpoints' }, A.el, B.el), get: () => ({ a: A.get(), b: B.get() }) }) },
-      { name: 'medium', label: 'Medio físico', placeholder: 'UTP Cat6, fibra OM3 LC, patch cord SC/APC…' },
+      { name: 'medium', label: 'Medio físico / tipo de cable', placeholder: 'UTP Cat6, fibra OM3 LC, patch cord SC/APC, jumper, pigtail…' },
+      { name: 'loop_reason', label: 'Motivo (solo lazo de ODF)', type: 'select', options: [['', '—'], ['cruce', 'Cruce'], ['prueba', 'Prueba'], ['reasignación de hilos', 'Reasignación de hilos'], ['otro', 'Otro']], hint: 'Se usa cuando el ODF se une consigo mismo' },
       { name: 'cable_id', label: 'Identificador del cable' },
       { name: 'speed', label: 'Velocidad / capacidad', placeholder: '1G, 10G, GPON…' },
       { name: 'status', label: 'Estado', type: 'select', options: statusOptions() },
@@ -285,7 +286,7 @@ export function connectionCard(c, { onChanged, onFocus } = {}) {
     h('div', { class: 'row gap' }, h('span', { class: `chip ${logical ? 'violet' : 'blue'}` }, logical ? 'Lógica' : 'Física'), badge(c.status)),
     end('a', 'Origen'), h('div', { class: 'conn-arrow' }, '⇅'), end('b', 'Destino'),
     props([
-      ['Tipo de conexión', c.conn_type], ['Medio físico', c.medium], ['Identificador del cable', c.cable_id], ['Velocidad / capacidad', c.speed],
+      ['Tipo de conexión', c.conn_type], ['Medio físico / tipo de cable', c.medium], ['Motivo del lazo', c.a_device_id === c.b_device_id ? c.loop_reason : ''], ['Identificador del cable', c.cable_id], ['Velocidad / capacidad', c.speed],
       logical ? ['VLAN', c.vlan] : null, logical ? ['Red IP', c.network] : null, ['Observaciones', c.notes],
     ]),
     h('div', { class: 'row gap wrap' },

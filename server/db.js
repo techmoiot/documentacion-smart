@@ -270,6 +270,8 @@ const MIGRATIONS = [
   // 7: equipos dentro de una bandeja (parent_id apunta a un equipo de tipo 'tray'; solo un nivel)
   `ALTER TABLE devices ADD COLUMN parent_id INTEGER REFERENCES devices(id) ON DELETE SET NULL;
   CREATE INDEX IF NOT EXISTS idx_devices_parent ON devices(parent_id);`,
+  // 8: motivo de los lazos de ODF (ODF unido consigo mismo): cruce, prueba, reasignación…
+  `ALTER TABLE connections ADD COLUMN loop_reason TEXT DEFAULT '';`,
 ];
 {
   const current = db.prepare('PRAGMA user_version').get().user_version;

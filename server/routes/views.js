@@ -77,7 +77,7 @@ router.get('/planta', wrap((_req, res) => {
   const pf = selectedFilter('project_id'), ff = selectedFilter('f.project_id');
   const poles = all(`SELECT * FROM poles WHERE ${pf.sql}`, ...pf.params);
   const elements = all(
-    `SELECT f.id, f.project_id, f.kind, f.name, f.code, f.parent_id, f.node_id, f.device_id, f.status, f.props, f.path, f.notes,
+    `SELECT f.id, f.project_id, f.kind, f.name, f.code, f.parent_id, f.node_id, f.device_id, f.port_id, f.status, f.props, f.path, f.notes,
        f.lat AS own_lat, f.lng AS own_lng, COALESCE(f.lat, n.lat) AS lat, COALESCE(f.lng, n.lng) AS lng
      FROM fiber_elements f LEFT JOIN nodes n ON n.id = f.node_id WHERE ${ff.sql}`, ...ff.params);
   for (const f of elements) {
@@ -85,7 +85,14 @@ router.get('/planta', wrap((_req, res) => {
     try { f.path = f.path ? JSON.parse(f.path) : null; } catch { f.path = null; }
   }
   const nodes = all(`SELECT id, project_id, code, name, type, status, lat, lng FROM nodes WHERE lat IS NOT NULL AND ${pf.sql}`, ...pf.params);
-  res.json({ poles, elements, nodes });
+  // lazos de ODF (un ODF unido consigo mismo): forman parte de la ruta de la fibra
+  const cf = selectedFilter('c.project_id');
+  const odfLoops = all(
+    `SELECT c.id, c.a_device_id AS device_id, d.name AS device_name, c.a_port_id, pa.name AS a_port, c.b_port_id, pb.name AS b_port, c.medium, c.loop_reason, c.cable_id
+     FROM connections c JOIN devices d ON d.id = c.a_device_id
+     LEFT JOIN ports pa ON pa.id = c.a_port_id LEFT JOIN ports pb ON pb.id = c.b_port_id
+     WHERE c.layer = 'physical' AND c.a_device_id = c.b_device_id AND ${cf.sql}`, ...cf.params);
+  res.json({ poles, elements, nodes, odfLoops });
 }));
 
 // ---------- Búsqueda global ----------

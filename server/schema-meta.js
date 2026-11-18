@@ -47,7 +47,7 @@ export const ENTITIES = {
     table: 'connections', label: 'conexión', nameField: 'id',
     fields: {
       layer: oneOf(['physical', 'logical']), a_device_id: int, a_port_id: int, b_device_id: int, b_port_id: int,
-      conn_type: text, medium: text, cable_id: text, speed: text, vlan: text, network: text,
+      conn_type: text, medium: text, cable_id: text, speed: text, vlan: text, network: text, loop_reason: text,
       status: oneOf(STATUSES), notes: text,
     },
     required: ['a_device_id', 'b_device_id'],
