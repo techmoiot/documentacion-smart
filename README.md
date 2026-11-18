@@ -177,3 +177,7 @@ La pérdida usa 0,35 dB/km, la pérdida de inserción de cada splitter (o la tí
 **Fibra FTTH en lista**: la vista por defecto es ahora un listado tipo inventario (tipo, nombre, código, de quién depende, detalle, nodo, clientes aguas abajo y estado), con filtros por tipo y estado, búsqueda y exportación CSV; clic en una fila abre su ficha. El diagrama de árbol sigue disponible con el botón **Árbol** (se recuerda la última vista).
 
 **Mover con seguridad (Planta externa)**: por defecto los postes y cajas ya **no se arrastran** al tocarlos; solo se seleccionan. Para reubicar use la herramienta **Mover elementos**. Cada movimiento (y cada edición de trazado de un cable) se puede **Deshacer / Rehacer** con los botones o con Ctrl+Z / Ctrl+Y; si se deshace el movimiento de un poste, los cables que pasan por él vuelven con él.
+
+## ODF conectado sobre sí mismo
+
+Un **ODF** puede unir un puerto con otro puerto **del mismo ODF** (jumper / patch cord). Se hace como cualquier conexión («Conectar este puerto…» en Rack o Nodo): al elegir el mismo ODF como destino, se excluye el puerto de origen. Ningún otro tipo de equipo puede conectarse a sí mismo, y un puerto solo admite una conexión (como origen o destino). La validación también está en el backend. En el rack y en la topología del nodo el lazo se dibuja en ámbar con línea de trazo mixto y la etiqueta «↺ lazo».

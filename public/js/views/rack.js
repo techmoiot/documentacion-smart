@@ -327,7 +327,8 @@ export async function rackView(root, node, rackId, query = {}) {
     linkIndex = items;
     const draw1 = (it, selected, idx) => {
       const A = portPos.get(it.a), B = portPos.get(it.link.remote_port_id);
-      const col = selected ? '#38bdf8' : statusColor(it.link.status);
+      const selfLoop = it.link.remote_device_id === it.devA.id; // ODF unido consigo mismo
+      const col = selected ? '#38bdf8' : selfLoop ? '#f59e0b' : statusColor(it.link.status);
       const lx = LANE_X - 14 + ((idx % 8) * 7);
       if (!A) return;
       let d;
@@ -335,10 +336,11 @@ export async function rackView(root, node, rackId, query = {}) {
       else d = `M ${A.x} ${A.y} L ${LANE_X} ${A.y}`;
       const grp = s('g', { class: 'cable', 'data-nopan': '' });
       if (selected) grp.append(s('path', { d, stroke: col, 'stroke-width': 7, opacity: 0.25, filter: 'url(#glow)' }));
-      grp.append(s('path', { d, stroke: col, 'stroke-width': selected ? 3 : 1.4, opacity: selected ? 1 : 0.5, 'stroke-linecap': 'round', 'stroke-dasharray': it.link.status === 'pendiente' ? '5 4' : null }));
+      grp.append(s('path', { d, stroke: col, 'stroke-width': selected ? 3 : 1.4, opacity: selected ? 1 : 0.5, 'stroke-linecap': 'round', 'stroke-dasharray': selfLoop ? '7 3 2 3' : it.link.status === 'pendiente' ? '5 4' : null }));
       grp.append(s('path', { d, stroke: 'transparent', 'stroke-width': 10, class: 'hit' }));
       grp.append(s('circle', { cx: A.x, cy: A.y, r: selected ? 4 : 2.5, fill: col }));
       if (B) grp.append(s('circle', { cx: B.x, cy: B.y, r: selected ? 4 : 2.5, fill: col }));
+      if (selfLoop) grp.append(s('text', { x: lx + 4, y: (A.y + (B ? B.y : A.y)) / 2 + 3, class: 'sub', fill: '#f59e0b', 'font-size': 10 }, '↺ lazo'));
       grp.addEventListener('click', (e) => { e.stopPropagation(); selectPort(it.a, A.dev.id); });
       layer.append(grp);
       if (selected && !B) {

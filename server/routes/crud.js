@@ -118,7 +118,11 @@ function validateConnection(data, current) {
   exists('devices', m.a_device_id, 'Equipo de origen');
   exists('devices', m.b_device_id, 'Equipo de destino');
   if (m.layer === 'physical') {
-    if (m.a_device_id === m.b_device_id) throw bad('Una conexión física debe unir dos equipos distintos');
+    if (m.a_device_id === m.b_device_id) {
+      // Excepción: un ODF puede unir dos de sus propios puertos (jumper / patch cord)
+      const dev = get('SELECT type FROM devices WHERE id = ?', m.a_device_id);
+      if (dev?.type !== 'odf') throw bad('Una conexión física debe unir dos equipos distintos (solo un ODF puede conectarse a sí mismo)');
+    }
     if (!m.a_port_id || !m.b_port_id) throw bad('Una conexión física requiere puerto de origen y de destino');
   }
   for (const [pk, dk, lbl] of [['a_port_id', 'a_device_id', 'origen'], ['b_port_id', 'b_device_id', 'destino']]) {
@@ -129,6 +133,14 @@ function validateConnection(data, current) {
     }
   }
   if (m.layer === 'physical' && m.a_port_id === m.b_port_id) throw bad('Los dos extremos no pueden ser el mismo puerto');
+  if (m.layer === 'physical') {
+    // un puerto solo admite una conexión, sea como origen o como destino
+    for (const pid of [m.a_port_id, m.b_port_id]) {
+      if (pid == null) continue;
+      const used = get(`SELECT id FROM connections WHERE layer = 'physical' AND (a_port_id = ? OR b_port_id = ?) AND id <> ?`, pid, pid, current?.id ?? -1);
+      if (used) throw conflict(`El puerto ya está en uso en la conexión #${used.id}`);
+    }
+  }
 }
 
 function validateFiber(data, current) {

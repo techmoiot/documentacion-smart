@@ -183,7 +183,7 @@ export async function rackForm(nodeId, rack = null) {
 }
 
 // ---------- Conexiones ----------
-function endpointPicker(title, devices, nodes, initial, currentConnId) {
+function endpointPicker(title, devices, nodes, initial, currentConnId, other = null) {
   const nodeSel = h('select', null, h('option', { value: '' }, 'Todos los nodos'), nodes.map((n) => h('option', { value: n.id }, n.name)));
   const devSel = h('select', { required: true });
   const portSel = h('select');
@@ -204,8 +204,14 @@ function endpointPicker(title, devices, nodes, initial, currentConnId) {
     if (!dev) return;
     for (const p of dev.ports) {
       const used = p.link && p.link.conn_id !== currentConnId;
-      portSel.append(h('option', { value: p.id, selected: String(p.id) === String(selectedPort), disabled: used },
-        `${p.name} · ${PORT_KIND[p.kind]?.label || p.kind}${used ? ` (en uso → ${p.link.remote_device_name}:${p.link.remote_port_name})` : ''}`));
+      // mismo equipo en ambos extremos: solo un ODF, y nunca el mismo puerto
+      const o = other?.();
+      const sameDev = o && o.device_id === dev.id;
+      const isOther = sameDev && o.port_id === p.id;
+      const notOdf = sameDev && dev.type !== 'odf';
+      const off = used || isOther || notOdf;
+      portSel.append(h('option', { value: p.id, selected: !off && String(p.id) === String(selectedPort), disabled: off },
+        `${p.name} · ${PORT_KIND[p.kind]?.label || p.kind}${used ? ` (en uso → ${p.link.remote_device_name}:${p.link.remote_port_name})` : isOther ? ' (puerto del otro extremo)' : notOdf ? ' (solo un ODF puede conectarse a sí mismo)' : ''}`));
     }
     info.textContent = dev.node ? `Nodo: ${dev.node.name}${dev.rack ? ` · ${dev.rack.name} ${dev.parent ? `· bandeja ${dev.parent.name}` : `U${dev.rack_u}`}` : ''}` : 'Sin nodo asignado';
   };
@@ -215,19 +221,27 @@ function endpointPicker(title, devices, nodes, initial, currentConnId) {
   }
   fill();
   if (initial.device_id) { devSel.value = initial.device_id; loadPorts(initial.port_id); }
-  nodeSel.addEventListener('change', () => { fill(); loadPorts(); });
-  devSel.addEventListener('change', () => loadPorts());
+  const listeners = [];
+  const notify = () => listeners.forEach((fn) => fn());
+  nodeSel.addEventListener('change', async () => { fill(); await loadPorts(); notify(); });
+  devSel.addEventListener('change', async () => { await loadPorts(); notify(); });
+  portSel.addEventListener('change', notify);
   const el = h('fieldset', { class: 'endpoint' }, h('legend', null, title), nodeSel, devSel, portSel, info);
   return {
     el, get: () => ({ device_id: devSel.value ? Number(devSel.value) : null, port_id: portSel.value ? Number(portSel.value) : null }),
     lock() { nodeSel.disabled = devSel.disabled = true; },
+    onChange: (fn) => listeners.push(fn),
+    refresh: () => loadPorts(portSel.value),
   };
 }
 
 export async function connectionForm({ conn = null, preset = {} } = {}) {
   const [devices, nodes] = await Promise.all([api.get('/api/devices'), api.get('/api/nodes')]);
-  const A = endpointPicker('Origen', devices, nodes, { device_id: conn?.a_device_id ?? preset.a_device_id, port_id: conn?.a_port_id ?? preset.a_port_id }, conn?.id);
-  const B = endpointPicker('Destino', devices, nodes, { device_id: conn?.b_device_id ?? preset.b_device_id, port_id: conn?.b_port_id ?? preset.b_port_id }, conn?.id);
+  let A, B;
+  A = endpointPicker('Origen', devices, nodes, { device_id: conn?.a_device_id ?? preset.a_device_id, port_id: conn?.a_port_id ?? preset.a_port_id }, conn?.id, () => B?.get());
+  B = endpointPicker('Destino', devices, nodes, { device_id: conn?.b_device_id ?? preset.b_device_id, port_id: conn?.b_port_id ?? preset.b_port_id }, conn?.id, () => A.get());
+  A.onChange(() => B.refresh());
+  B.onChange(() => A.refresh());
   if (preset.lockA) A.lock();
   const v = await formModal({
     title: conn ? `Editar conexión #${conn.id}` : 'Nueva conexión', wide: true,

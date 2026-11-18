@@ -74,6 +74,25 @@ test('conexión física: un puerto admite un solo cable', async () => {
   assert.equal(impact.devices[0].name, 'Switch');
 });
 
+test('ODF: puede conectar dos de sus puertos; ningún otro equipo puede conectarse a sí mismo', async () => {
+  const odf = (await call('admin', 'POST', '/api/devices', { name: 'ODF-1', type: 'odf', rack_id: rack.id, rack_u: 8, u_height: 1, port_groups: [{ kind: 'fiber', prefix: 'F', count: 6 }] })).data;
+  const po = (await call('admin', 'GET', `/api/devices/${odf.id}/full`)).data.ports;
+  const mk = (x, y, dev = odf.id) => call('admin', 'POST', '/api/connections', { layer: 'physical', a_device_id: dev, a_port_id: x, b_device_id: dev, b_port_id: y, medium: 'patch cord' });
+  assert.equal((await mk(po[0].id, po[0].id)).status, 400);            // mismo puerto
+  const ok = await mk(po[0].id, po[1].id);
+  assert.equal(ok.status, 201);                                          // puerto A -> puerto B
+  assert.equal((await mk(po[1].id, po[2].id)).status, 409);            // po[1] ya ocupado como destino
+  assert.equal((await mk(po[2].id, po[0].id)).status, 409);            // po[0] ya ocupado como origen
+  const l = (await call('admin', 'GET', `/api/devices/${odf.id}/full`)).data.ports;
+  assert.equal(l[0].link.remote_port_id, po[1].id);
+  assert.equal(l[1].link.remote_port_id, po[0].id);
+  const pr = (await call('admin', 'GET', `/api/devices/${a.id}/full`)).data.ports;
+  assert.equal((await mk(pr[0].id, pr[1].id, a.id)).status, 400);      // un router no puede
+  assert.equal((await call('admin', 'DELETE', `/api/connections/${ok.data.id}`)).status, 200);
+  const f = (await call('admin', 'GET', `/api/devices/${odf.id}/full`)).data.ports;
+  assert.ok(!f[0].link && !f[1].link);                                   // ambos puertos libres
+});
+
 test('permisos por rol', async () => {
   assert.equal((await call('lector', 'POST', '/api/nodes', { code: 'Z', name: 'Z' })).status, 403);
   assert.equal((await call('lector', 'GET', '/api/nodes')).status, 200);

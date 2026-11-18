@@ -118,20 +118,23 @@ export async function topologyView(root, node, query = {}) {
       const x1 = sa === 'R' ? A.x + BW : A.x, y1 = info.ya, x2 = sb === 'R' ? B.x + BW : B.x, y2 = info.yb;
       let d, mid;
       if (A.col === B.col) {
-        const bulge = 60 + (idx % 5) * 14;
+        const bulge = (A === B ? 90 : 60) + (idx % 5) * 14;
         d = `M ${x1} ${y1} C ${x1 + bulge} ${y1}, ${x2 + bulge} ${y2}, ${x2} ${y2}`; mid = [x1 + bulge * 0.75, (y1 + y2) / 2];
       } else {
         const dx = Math.abs(x2 - x1) * 0.5, dir = sa === 'R' ? 1 : -1;
         d = `M ${x1} ${y1} C ${x1 + dir * dx} ${y1}, ${x2 - dir * dx} ${y2}, ${x2} ${y2}`; mid = [(x1 + x2) / 2, (y1 + y2) / 2];
       }
       const logical = c.layer === 'logical';
-      const color = c.status !== 'operativo' && STATUS[c.status] ? STATUS[c.status].color : logical ? LOGICAL_COLOR : '#22c55e';
+      const selfLoop = A === B;
+      const color = c.status !== 'operativo' && STATUS[c.status] ? STATUS[c.status].color : selfLoop ? '#f59e0b' : logical ? LOGICAL_COLOR : '#22c55e';
       const isSel = sel?.type === 'conn' && sel.id === c.id;
       const involves = sel?.type === 'dev' && (sel.id === c.a_device_id || sel.id === c.b_device_id);
       const dim = sel && !isSel && !involves;
       const g = s('g', { 'data-nopan': '', class: dim ? 'dim' : '' });
       g.append(s('path', { d, class: `edge ${logical ? 'logical' : ''} ${isSel ? 'sel' : ''}`, stroke: isSel ? '#38bdf8' : color, 'stroke-opacity': isSel || involves ? 1 : 0.85 }));
+      if (selfLoop) g.lastChild.setAttribute('stroke-dasharray', '7 3 2 3');
       g.append(s('path', { d, class: 'edge-hit' }));
+      if (selfLoop) g.append(s('text', { x: mid[0] + 6, y: mid[1] + 3, class: 'edge-lbl', fill: '#f59e0b' }, '↺ lazo ODF'));
       const outA = sa === 'R', outB = sb === 'R';
       if (c.a_port_name) g.append(s('text', { x: x1 + (outA ? 6 : -6), y: y1 - 3, class: 'edge-lbl', 'text-anchor': outA ? 'start' : 'end' }, c.a_port_name));
       if (c.b_port_name) g.append(s('text', { x: x2 + (outB ? 6 : -6), y: y2 - 3, class: 'edge-lbl', 'text-anchor': outB ? 'start' : 'end' }, c.b_port_name));
