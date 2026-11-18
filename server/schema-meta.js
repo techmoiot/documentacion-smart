@@ -2,7 +2,7 @@
 
 export const STATUSES = ['operativo', 'degradado', 'fuera_de_servicio', 'pendiente'];
 export const NODE_TYPES = ['principal', 'distribucion', 'torre', 'repetidor', 'nap', 'cliente', 'otro'];
-export const DEVICE_TYPES = ['router', 'switch', 'olt', 'odf', 'patch_panel', 'organizer', 'ups', 'pdu', 'server', 'radio', 'onu', 'other'];
+export const DEVICE_TYPES = ['router', 'switch', 'olt', 'odf', 'patch_panel', 'organizer', 'ups', 'pdu', 'server', 'radio', 'onu', 'tray', 'media_converter', 'other'];
 export const PORT_KINDS = ['rj45', 'sfp', 'sfp+', 'sfp28', 'qsfp+', 'pon', 'fiber', 'console', 'mgmt', 'power', 'usb', 'other'];
 export const FIBER_KINDS = ['olt', 'pon', 'odf', 'cable', 'splitter', 'nap', 'closure', 'client'];
 export const POLE_MATERIALS = ['concreto', 'madera', 'metal', 'otro'];
@@ -35,12 +35,12 @@ export const ENTITIES = {
   devices: {
     table: 'devices', label: 'equipo', nameField: 'name',
     fields: {
-      node_id: int, rack_id: int, rack_u: int, u_height: int, name: text, type: oneOf(DEVICE_TYPES), brand: text,
+      node_id: int, rack_id: int, rack_u: int, u_height: int, parent_id: int, name: text, type: oneOf(DEVICE_TYPES), brand: text,
       model: text, rack_side: oneOf(['front', 'rear', 'both']), serial: text, ip: text, mac: text, firmware: text, location: text, status: oneOf(STATUSES),
       installed_at: date, notes: text,
     },
     required: ['name'],
-    filters: ['node_id', 'rack_id', 'type', 'status'],
+    filters: ['node_id', 'rack_id', 'parent_id', 'type', 'status'],
     order: 'name',
   },
   connections: {

@@ -267,6 +267,9 @@ const MIGRATIONS = [
   ALTER TABLE audit_log ADD COLUMN project_id INTEGER;
   UPDATE audit_log SET project_id = 1 WHERE entity_type IN ('nodes','racks','devices','connections','fiber','antennas','radiolinks','poles');
   INSERT INTO project_members (project_id, user_id) SELECT 1, id FROM users WHERE role <> 'admin';`,
+  // 7: equipos dentro de una bandeja (parent_id apunta a un equipo de tipo 'tray'; solo un nivel)
+  `ALTER TABLE devices ADD COLUMN parent_id INTEGER REFERENCES devices(id) ON DELETE SET NULL;
+  CREATE INDEX IF NOT EXISTS idx_devices_parent ON devices(parent_id);`,
 ];
 {
   const current = db.prepare('PRAGMA user_version').get().user_version;

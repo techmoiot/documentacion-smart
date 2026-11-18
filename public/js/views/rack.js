@@ -10,10 +10,13 @@ const UH = 46, TOP = 16, NUM_W = 36, RAIL = 16, INNER = 720, LANE = 230, LABEL_W
 const X0 = NUM_W + RAIL, X1 = X0 + INNER, LANE_X = X1 + RAIL + 24;
 const W = X1 + RAIL + LANE;
 
+const MAX_TRAY = 8;   // equipos por bandeja (igual que el servidor)
+const TRAY_LABEL_W = 150, CH_GAP = 8, CH_TOP = 14;
+
 const statusColor = (st) => STATUS[st]?.color || '#94a3b8';
 
 /** Calcula la posición de cada puerto dentro de la cara frontal del equipo (coordenadas relativas). */
-function layoutPorts(d, heightPx) {
+function layoutPorts(d, heightPx, opts = {}) {
   const ports = d.ports || [];
   if (!ports.length) return [];
   const groups = [];
@@ -21,9 +24,9 @@ function layoutPorts(d, heightPx) {
     const last = groups[groups.length - 1];
     if (last && last.kind === p.kind) last.items.push(p); else groups.push({ kind: p.kind, items: [p] });
   }
-  const rows = ports.length > 14 || d.u_height >= 2 ? 2 : 1;
-  const ch = Math.min(24, (heightPx - 16) / rows - 4);
-  const availW = INNER - LABEL_W - 24;
+  const rows = ports.length > 14 || (d.u_height >= 2 && !opts.compact) ? 2 : 1;
+  const ch = Math.min(24, (heightPx - (opts.pad ?? 16)) / rows - 4);
+  const availW = opts.availW ?? INNER - LABEL_W - 24;
   const cols = groups.map((g) => Math.ceil(g.items.length / rows));
   const totalCols = cols.reduce((a, b) => a + b, 0);
   const pitch = Math.min(28, (availW - GAP * (groups.length - 1)) / totalCols);
@@ -31,7 +34,7 @@ function layoutPorts(d, heightPx) {
   const blockH = rows * (ch + 4) - 4;
   const top = (heightPx - blockH) / 2;
   const out = [];
-  let x = LABEL_W + 8;
+  let x = opts.x0 ?? LABEL_W + 8;
   groups.forEach((g, gi) => {
     g.items.forEach((p, i) => {
       const col = Math.floor(i / rows), row = i % rows;
@@ -65,7 +68,14 @@ export async function rackView(root, node, rackId, query = {}) {
   let unmounted = [];
   let side = query.side === 'rear' ? 'rear' : 'front';   // lado visible del rack
   const onSide = (d) => (d.rack_side || 'front') === 'both' || (d.rack_side || 'front') === side;
-  const applySide = () => { rack.devices = rack.all.filter(onSide); };
+  const applySide = () => {
+    rack.devices = rack.all.filter((d) => !d.parent_id && onSide(d));   // equipos montados directamente en el rack
+    rack.kids = new Map();                                              // bandeja → equipos que contiene
+    for (const c of rack.all) if (c.parent_id) { if (!rack.kids.has(c.parent_id)) rack.kids.set(c.parent_id, []); rack.kids.get(c.parent_id).push(c); }
+    for (const l of rack.kids.values()) l.sort((a, b) => a.id - b.id);
+    rack.shown = [...rack.devices, ...rack.devices.flatMap((d) => rack.kids.get(d.id) || [])];
+  };
+  const findDev = (id) => rack.shown.find((x) => x.id === id);
 
   const svg = s('svg', { class: 'canvas', role: 'img', 'aria-label': 'Vista frontal del rack' });
   const ctrl = panZoom(svg, { min: 0.3, max: 8 });
@@ -80,7 +90,7 @@ export async function rackView(root, node, rackId, query = {}) {
     h('span', null, h('i', { style: { background: '#22c55e' } }), 'Conectado'), h('span', null, h('i', { style: { background: '#0b1220', border: '1px solid #475569' } }), 'Libre'),
     h('span', null, h('i', { style: { background: '#f59e0b' } }), 'Degradado'), h('span', null, h('i', { style: { background: '#ef4444' } }), 'Fuera de servicio'),
     h('span', null, h('i', { style: { background: '#38bdf8' } }), 'Seleccionado'));
-  const hint = h('div', { class: 'hint' }, canWrite ? 'Clic en un equipo o puerto · arrastre un equipo para moverlo · clic en una U vacía para agregar' : 'Clic en un equipo o puerto para ver su información');
+  const hint = h('div', { class: 'hint' }, canWrite ? 'Clic en un equipo o puerto · arrastre un equipo para moverlo · clic en una U vacía para agregar · una bandeja admite equipos pequeños dentro' : 'Clic en un equipo o puerto para ver su información');
   const hostBox = h('div', { class: 'svg-host' }, svg, legend, hint);
   stage.append(hostBox);
 
@@ -91,7 +101,7 @@ export async function rackView(root, node, rackId, query = {}) {
   async function load() {
     const [r, devs] = await Promise.all([api.get(`/api/racks/${activeId}/full`), api.get(`/api/devices?node_id=${node.id}`)]);
     rack = r; rack.all = r.devices; applySide();
-    unmounted = devs.filter((d) => !d.rack_id);
+    unmounted = devs.filter((d) => !d.rack_id && !d.parent_id);
     renderToolbarActions();
     renderUnmounted();
     draw();
@@ -103,6 +113,7 @@ export async function rackView(root, node, rackId, query = {}) {
     if (canWrite) {
       box.append(
         btn('Agregar equipo', { ic: 'plus', kind: 'primary', onClick: () => addDevice(null) }),
+        btn('Agregar bandeja', { ic: 'plus', title: 'Una bandeja ocupa U en el rack y admite equipos pequeños (media converter, switch PoE…)', onClick: () => addDevice(firstFreeU(), { type: 'tray', name: 'Bandeja' }) }),
         btn('', { ic: 'edit', title: 'Editar rack', onClick: async () => { if (await rackForm(node.id, rack)) { Object.assign(node.racks.find((x) => x.id === rack.id), await api.get(`/api/racks/${rack.id}`)); go(location.hash); } } }),
         btn('', { ic: 'trash', title: 'Eliminar rack', onClick: async () => {
           if (!(await confirmBox(`¿Eliminar el rack «${rack.name}»? Sus equipos no se borran: quedan sin rack en el inventario.`))) return;
@@ -200,7 +211,15 @@ export async function rackView(root, node, rackId, query = {}) {
     if (hpx > UH) g.append(s('text', { x: 16, y: 54, class: 'dmodel' }, d.ip || ''));
     else if (d.ip) g.append(s('text', { x: 16, y: hpx - 4, class: 'dip' }, d.ip));
 
-    const lay = layoutPorts(d, hpx);
+    const isTray = d.type === 'tray';
+    const kids = isTray ? rack.kids.get(d.id) || [] : [];
+    if (isTray) {
+      g.querySelector('.face').setAttribute('stroke-dasharray', '6 3');
+      g.querySelector('.face').setAttribute('stroke', isSel ? '#38bdf8' : '#6d5bb5');
+      g.querySelector('title').textContent += ` · bandeja con ${kids.length} equipo(s)`;
+      const cap = g.querySelector('.dmodel'); cap.textContent = `Bandeja · ${kids.length} equipo${kids.length === 1 ? '' : 's'}`;
+    }
+    const lay = isTray ? [] : layoutPorts(d, hpx);
     for (const pl of lay) {
       const p = pl.port;
       const linked = !!p.link;
@@ -228,13 +247,78 @@ export async function rackView(root, node, rackId, query = {}) {
 
     attachDrag(g, d);
     scene.append(g);
+    if (isTray) drawTrayContents(d, kids, y, hpx);
+  }
+
+  /** Área interior de la bandeja: ancho de cada ranura según la cantidad de equipos. */
+  function trayGeom(d, n) {
+    const hpx = d.u_height * UH;
+    const slots = Math.min(MAX_TRAY, n + (canWrite && n < MAX_TRAY ? 1 : 0)) || 1;
+    const areaW = INNER - TRAY_LABEL_W - 16;
+    const w = Math.min(190, (areaW - CH_GAP * (slots - 1)) / slots);
+    return { hpx, w, h: hpx - 12, oy: 6, ox0: TRAY_LABEL_W };
+  }
+  /** Caja absoluta (coordenadas de la escena) de un equipo dentro de su bandeja. */
+  function childBox(c) {
+    const tray = rack.all.find((x) => x.id === c.parent_id);
+    const kids = rack.kids.get(tray.id) || [];
+    const idx = kids.findIndex((k) => k.id === c.id);
+    const G = trayGeom(tray, kids.length);
+    return { x: X0 + G.ox0 + idx * (G.w + CH_GAP), y: devTop(tray) + G.oy, w: G.w, h: G.h, tray };
+  }
+
+  function drawTrayContents(tray, kids, ty, hpx) {
+    const G = trayGeom(tray, kids.length);
+    kids.forEach((c, i) => drawChild(c, X0 + G.ox0 + i * (G.w + CH_GAP), ty + G.oy, G.w, G.h));
+    if (canWrite && kids.length < MAX_TRAY) {
+      const x = X0 + G.ox0 + kids.length * (G.w + CH_GAP);
+      const add = s('g', { class: 'slot child-add', 'data-nopan': '', transform: `translate(${x} ${ty + G.oy})` },
+        s('rect', { width: G.w, height: G.h, rx: 3 }), s('text', { x: G.w / 2, y: G.h / 2 + 4, 'text-anchor': 'middle' }, '+ equipo'),
+        s('title', null, `Agregar un equipo a la bandeja «${tray.name}»`));
+      add.addEventListener('click', (e) => { e.stopPropagation(); if (!ctrl.justPanned()) addChild(tray); });
+      scene.append(add);
+    }
+  }
+
+  function drawChild(c, ax, ay, w, h) {
+    const dt = DEVICE_TYPE[c.type] || DEVICE_TYPE.other;
+    const isSel = selDevice === c.id;
+    const g = s('g', { class: `dev child ${isSel ? 'sel' : ''}`, 'data-dev': c.id, 'data-nopan': canWrite ? '' : null, transform: `translate(${ax} ${ay})` });
+    const nm = Math.max(6, Math.floor(w / 6.2));
+    g.append(
+      s('rect', { x: 0.5, y: 0.5, width: w - 1, height: h - 1, rx: 3, fill: 'url(#face)', class: 'face', stroke: isSel ? '#38bdf8' : '#3b4a6b', 'stroke-width': isSel ? 2.5 : 1 }),
+      s('rect', { x: 0.5, y: 0.5, width: 4, height: h - 1, rx: 2, fill: dt.color }),
+      s('text', { x: 9, y: 10, class: 'cname' }, c.name.length > nm ? c.name.slice(0, nm - 1) + '…' : c.name),
+      s('circle', { cx: w - 7, cy: 7, r: 2.5, fill: statusColor(c.status), class: 'led' }),
+      s('title', null, `${c.name}${c.ip ? ' · ' + c.ip : ''} · ${dt.label} · dentro de la bandeja`));
+    const lay = layoutPorts(c, h - CH_TOP, { compact: true, pad: 6, x0: 9, availW: w - 16 });
+    for (const pl of lay) {
+      const p = pl.port;
+      const linked = !!p.link;
+      const isPortSel = selPort === p.id;
+      const isRemote = selConn && p.link && p.link.conn_id === selConn && !isPortSel;
+      const kc = PORT_KIND[p.kind]?.color || '#94a3b8';
+      const fill = linked ? statusColor(p.link.status) : '#0b1220';
+      const py = pl.y + CH_TOP;
+      const pg = s('g', { class: `port ${linked ? 'linked' : 'free'} ${isPortSel ? 'sel' : ''} ${isRemote ? 'remote' : ''}`, 'data-port': p.id, tabindex: 0, role: 'button', 'aria-label': `Puerto ${p.name} de ${c.name}` });
+      const shape = ['pon', 'fiber'].includes(p.kind)
+        ? s('circle', { cx: pl.x + pl.w / 2, cy: py + pl.h / 2, r: Math.min(pl.w, pl.h) / 2, fill, stroke: kc, 'stroke-width': 1.2 })
+        : s('rect', { x: pl.x, y: py, width: pl.w, height: pl.h, rx: 1.5, fill, stroke: linked ? '#e2e8f0' : kc, 'stroke-opacity': linked ? 0.35 : 0.8, 'stroke-width': 1 });
+      pg.append(shape, s('title', null, `${p.name}${p.label ? ' · ' + p.label : ''}${p.speed ? ' · ' + p.speed : ''}${linked ? ` → ${p.link.remote_device_name} : ${p.link.remote_port_name || '—'}` : ' · libre'}`));
+      pg.addEventListener('click', (e) => { e.stopPropagation(); if (!ctrl.justPanned()) selectPort(p.id, c.id); });
+      pg.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectPort(p.id, c.id); } });
+      g.append(pg);
+      portPos.set(p.id, { x: ax + pl.x + pl.w / 2, y: ay + py + pl.h / 2, dev: c, port: p });
+    }
+    g.addEventListener('click', (e) => { if (e.target.closest('.port')) return; if (!ctrl.justPanned()) selectDevice(c.id); });
+    scene.append(g);
   }
 
   function drawCables() {
     const layer = s('g', { class: 'cables', fill: 'none' });
     const seen = new Set();
     const items = [];
-    for (const d of rack.devices) for (const p of d.ports) if (p.link && !seen.has(p.link.conn_id)) {
+    for (const d of rack.shown) for (const p of d.ports) if (p.link && !seen.has(p.link.conn_id)) {
       seen.add(p.link.conn_id);
       items.push({ id: p.link.conn_id, a: p.id, link: p.link, devA: d });
     }
@@ -325,7 +409,7 @@ export async function rackView(root, node, rackId, query = {}) {
   async function selectDevice(id, { focus = false } = {}) {
     selDevice = id; selPort = null; selConn = null;
     setUrl(); draw();
-    const d = rack.devices.find((x) => x.id === id);
+    const d = findDev(id);
     if (!d) return;
     if (focus) focusDevice(d);
     const full = await guard(() => api.get(`/api/devices/${id}/full`));
@@ -333,11 +417,11 @@ export async function rackView(root, node, rackId, query = {}) {
     openPanel(full.name, deviceCard(full, {
       onChanged: async (removed) => { if (removed) { selDevice = null; closePanel(true); } await load(); if (!removed) selectDevice(id); },
       onFocus: () => focusDevice(d),
-    }), { subtitle: `${rack.name} · U${d.rack_u}${d.u_height > 1 ? '–U' + (d.rack_u + d.u_height - 1) : ''}`, onClose: () => { selDevice = null; selPort = null; selConn = null; setUrl(); draw(); } });
+    }), { subtitle: d.parent_id ? `${rack.name} · bandeja ${rack.all.find((x) => x.id === d.parent_id)?.name || ''}` : `${rack.name} · U${d.rack_u}${d.u_height > 1 ? '–U' + (d.rack_u + d.u_height - 1) : ''}`, onClose: () => { selDevice = null; selPort = null; selConn = null; setUrl(); draw(); } });
   }
 
   async function selectPort(portId, deviceId, { focus = false } = {}) {
-    const d = rack.devices.find((x) => x.id === deviceId);
+    const d = findDev(deviceId);
     const p = d?.ports.find((x) => x.id === portId);
     if (!p) return;
     selDevice = deviceId; selPort = portId; selConn = p.link?.conn_id ?? null;
@@ -370,13 +454,13 @@ export async function rackView(root, node, rackId, query = {}) {
         if (await connectionForm({ preset: { a_device_id: deviceId, a_port_id: portId, lockA: true } })) { await load(); selectPort(portId, deviceId); }
       } })));
     }
-    openPanel(`${d.name} · ${p.name}`, body, { subtitle: `${rack.name} · U${d.rack_u}`, onClose: () => { selPort = null; selConn = null; setUrl(); draw(); } });
+    openPanel(`${d.name} · ${p.name}`, body, { subtitle: d.parent_id ? `${rack.name} · bandeja ${rack.all.find((x) => x.id === d.parent_id)?.name || ''}` : `${rack.name} · U${d.rack_u}`, onClose: () => { selPort = null; selConn = null; setUrl(); draw(); } });
   }
 
   function gotoRemote(link) {
     const rdAll = rack.all.find((x) => x.id === link.remote_device_id);
     if (rdAll && !onSide(rdAll)) setSide(rdAll.rack_side === 'rear' ? 'rear' : 'front');
-    const rd = rack.devices.find((x) => x.id === link.remote_device_id);
+    const rd = findDev(link.remote_device_id);
     if (rd) { selectPort(link.remote_port_id, rd.id, { focus: true }); return; }
     if (link.remote_node_id && link.remote_rack_id) go(`#/nodo/${link.remote_node_id}/rack/${link.remote_rack_id}?device=${link.remote_device_id}&port=${link.remote_port_id || ''}`);
     else if (link.remote_node_id) go(`#/nodo/${link.remote_node_id}/equipos`);
@@ -384,13 +468,31 @@ export async function rackView(root, node, rackId, query = {}) {
   }
 
   function focusDevice(d) {
+    if (d.parent_id) { const b = childBox(d); ctrl.fit({ x: b.x - 6, y: b.y - 6, w: b.w + 12, h: b.h + 12 }, 30, 10); return; }
     const y = devTop(d);
     ctrl.fit({ x: X0, y, w: INNER, h: d.u_height * UH }, 30, 6);
   }
 
-  async function addDevice(u) {
-    const created = await deviceForm({ node_id: node.id, rack_id: activeId, rack_u: u, rack_side: side });
-    if (created) { toast('Equipo agregado'); await load(); selectDevice(created.id); }
+  /** Primera U libre en el lado visible (para proponer posición a una bandeja nueva). */
+  function firstFreeU(height = 1) {
+    const used = new Set();
+    for (const d of rack.devices) for (let u = d.rack_u; u < d.rack_u + d.u_height; u++) used.add(u);
+    for (let u = 1; u + height - 1 <= rack.units; u++) {
+      let ok = true;
+      for (let k = 0; k < height; k++) if (used.has(u + k)) { ok = false; break; }
+      if (ok) return u;
+    }
+    return null;
+  }
+
+  async function addDevice(u, preset = {}) {
+    const created = await deviceForm({ node_id: node.id, rack_id: activeId, rack_u: u, rack_side: side, ...preset });
+    if (created) { toast(created.type === 'tray' ? 'Bandeja agregada' : 'Equipo agregado'); await load(); selectDevice(created.id); }
+  }
+
+  async function addChild(tray) {
+    const created = await deviceForm({ parent: tray });
+    if (created) { toast(`Equipo agregado a la bandeja «${tray.name}»`); await load(); selectDevice(created.id); }
   }
 
   await load();
@@ -399,7 +501,7 @@ export async function rackView(root, node, rackId, query = {}) {
     const dId = Number(query.device), pId = Number(query.port);
     const target = rack.all.find((d) => d.id === dId);
     if (target && !onSide(target)) setSide(target.rack_side);
-    if (dId && rack.devices.some((d) => d.id === dId)) {
+    if (dId && rack.shown.some((d) => d.id === dId)) {
       if (pId) selectPort(pId, dId, { focus: true }); else selectDevice(dId, { focus: true });
     }
   });

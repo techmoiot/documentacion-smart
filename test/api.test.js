@@ -176,6 +176,51 @@ test('rack: frente y atrás son independientes; plantillas personalizadas', asyn
   assert.equal((await call('admin', 'DELETE', `/api/device-templates/${t.data.id}`)).status, 200);
 });
 
+test('bandejas: equipos pequeños solo dentro de una bandeja, no dentro de otros equipos', async () => {
+  const n = (await call('admin', 'POST', '/api/nodes', { code: 'BJ-1', name: 'N bandeja' })).data;
+  const rk = (await call('admin', 'POST', '/api/racks', { node_id: n.id, name: 'RB', units: 10 })).data;
+  const post = (b) => call('admin', 'POST', '/api/devices', b);
+  const tray = await post({ name: 'Bandeja 1', type: 'tray', rack_id: rk.id, rack_u: 2, u_height: 1 });
+  assert.equal(tray.status, 201);
+  const sw = (await post({ name: 'Switch', type: 'switch', rack_id: rk.id, rack_u: 5, u_height: 1 })).data;
+
+  // equipo dentro de la bandeja: hereda rack/nodo, no ocupa U y puede tener puertos
+  const mc = await post({ name: 'MC-1', type: 'media_converter', parent_id: tray.data.id, port_groups: [{ kind: 'rj45', prefix: 'LAN', count: 1 }, { kind: 'fiber', prefix: 'FO', count: 1 }] });
+  assert.equal(mc.status, 201);
+  assert.equal(mc.data.rack_id, rk.id); assert.equal(mc.data.node_id, n.id); assert.equal(mc.data.rack_u, null);
+  // la U de la bandeja sigue siendo una sola: otro equipo no puede ocupar la misma U
+  assert.equal((await post({ name: 'X', rack_id: rk.id, rack_u: 2 })).status, 409);
+
+  // no se puede meter equipos dentro de otro equipo (solo bandejas), ni bandejas dentro de bandejas
+  assert.equal((await post({ name: 'Y', type: 'media_converter', parent_id: sw.id })).status, 400);
+  assert.equal((await call('admin', 'PATCH', `/api/devices/${mc.data.id}`, { parent_id: sw.id })).status, 400);
+  assert.equal((await post({ name: 'B2', type: 'tray', parent_id: tray.data.id })).status, 400);
+  assert.equal((await call('admin', 'PATCH', `/api/devices/${tray.data.id}`, { parent_id: tray.data.id })).status, 400);
+
+  // detalle: la bandeja lista sus equipos y el equipo conoce su bandeja
+  const full = (await call('admin', 'GET', `/api/devices/${tray.data.id}/full`)).data;
+  assert.deepEqual(full.children.map((c) => c.name), ['MC-1']);
+  assert.equal((await call('admin', 'GET', `/api/devices/${mc.data.id}/full`)).data.parent.name, 'Bandeja 1');
+  assert.equal((await call('admin', 'GET', `/api/racks/${rk.id}/full`)).data.devices.length, 3);
+
+  // una bandeja con equipos no cambia de tipo; los equipos siguen a su bandeja al moverla
+  assert.equal((await call('admin', 'PATCH', `/api/devices/${tray.data.id}`, { type: 'switch' })).status, 409);
+  assert.equal((await call('admin', 'PATCH', `/api/devices/${tray.data.id}`, { rack_u: 8, rack_side: 'rear' })).status, 200);
+  const moved = (await call('admin', 'GET', `/api/devices/${mc.data.id}`)).data;
+  assert.equal(moved.rack_side, 'rear'); assert.equal(moved.rack_u, null);
+
+  // límite de equipos por bandeja
+  for (let i = 2; i <= 8; i++) assert.equal((await post({ name: `MC-${i}`, type: 'media_converter', parent_id: tray.data.id })).status, 201);
+  assert.equal((await post({ name: 'MC-9', type: 'media_converter', parent_id: tray.data.id })).status, 409);
+
+  // sacar un equipo de la bandeja y eliminar la bandeja: los equipos no se borran
+  assert.equal((await call('admin', 'PATCH', `/api/devices/${mc.data.id}`, { parent_id: null, rack_id: null })).status, 200);
+  assert.equal((await call('admin', 'DELETE', `/api/devices/${tray.data.id}`)).status, 200);
+  const left = (await call('admin', 'GET', `/api/devices?node_id=${n.id}`)).data;
+  assert.equal(left.filter((d) => d.name.startsWith('MC-')).length, 8);
+  assert.ok(left.filter((d) => d.name.startsWith('MC-')).every((d) => d.parent_id == null && d.rack_id == null));
+});
+
 test('proyectos: aislamiento, acceso por usuario, creación con elección y fusión', async () => {
   const hdr = (who, project, extra = {}) => async (method, url, body) => {
     const res = await fetch(base + url, { method, headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'SmartDoc', Cookie: jar[who], ...(project ? { 'X-Project': String(project) } : {}), ...extra }, body: body === undefined ? undefined : JSON.stringify(body) });

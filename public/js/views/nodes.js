@@ -97,7 +97,7 @@ export async function nodeView(root, id, tab, sub, query) {
 }
 
 function summaryTab(body, node) {
-  const used = node.devices.reduce((a, d) => a + (d.rack_id ? d.u_height : 0), 0);
+  const used = node.devices.reduce((a, d) => a + (d.rack_id && !d.parent_id ? d.u_height : 0), 0);
   const cap = node.racks.reduce((a, r) => a + r.units, 0);
   body.append(h('div', { class: 'two-col' },
     h('div', { class: 'box' }, h('h4', { style: { marginTop: 0 } }, 'Ficha técnica'), props([
@@ -122,7 +122,7 @@ function devicesTab(body, node) {
       if (full) openPanel(full.name, deviceCard(full, { onChanged: () => { closePanel(true); go(location.hash); } }));
     } },
     h('td', null, h('strong', null, d.name)), h('td', null, DEVICE_TYPE[d.type]?.label || d.type), h('td', null, [d.brand, d.model].filter(Boolean).join(' ')), h('td', null, d.ip),
-    h('td', null, d.rack_id ? `Rack · U${d.rack_u}` : d.location || '—'), h('td', null, `${d.conn_count} / ${d.port_count}`), h('td', null, badge(d.status))))));
+    h('td', null, d.rack_id ? (d.parent_id ? 'Rack · en bandeja' : `Rack · U${d.rack_u}`) : d.location || '—'), h('td', null, `${d.conn_count} / ${d.port_count}`), h('td', null, badge(d.status))))));
   body.append(
     can('write') ? h('div', { class: 'page-head' }, btn('Nuevo equipo', { ic: 'plus', kind: 'primary', onClick: async () => { if (await deviceForm({ node_id: node.id })) go(location.hash); } })) : null,
     rows.length ? h('div', { class: 'table-wrap' }, tbl) : emptyState('Este nodo no tiene equipos registrados.'));

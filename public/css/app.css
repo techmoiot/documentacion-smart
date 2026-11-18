@@ -129,6 +129,9 @@ table.t tbody tr { cursor: pointer; } table.t tbody tr:hover { background: #1523
 .slot rect { fill: transparent; stroke: #16213a; } .slot text { fill: transparent; font-size: 12px; }
 .slot:hover rect { fill: #0e7490; fill-opacity: .12; stroke: #0891b2; stroke-dasharray: 4 3; } .slot:hover text { fill: #67e8f9; }
 .slot { cursor: pointer; }
+.cname { fill: #e2e8f0; font-size: 9.5px; font-weight: 600; pointer-events: none; }
+.child-add rect { fill: transparent; stroke: #3b2f6b; stroke-dasharray: 4 3; } .child-add text { fill: #5b4a9a; font-size: 11px; }
+.child-add:hover rect { fill: #8b5cf6; fill-opacity: .12; stroke: #8b5cf6; } .child-add:hover text { fill: #c4b5fd; }
 .dev { cursor: pointer; } .dev .face { transition: stroke .15s; } .dev:hover .face { stroke: #5c7bb5; }
 .dname { fill: #eaf1ff; font-size: 12.5px; font-weight: 650; } .dmodel { fill: #93a5c6; font-size: 10.5px; } .dip { fill: #6d7fa3; font-size: 9.5px; font-family: ui-monospace, monospace; }
 .pnum { font-size: 7.5px; font-family: ui-monospace, monospace; pointer-events: none; }

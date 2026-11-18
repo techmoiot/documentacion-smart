@@ -45,6 +45,14 @@ function withJson(def, r) {
   return r;
 }
 
+/** Los equipos de una bandeja siguen a su bandeja (rack, nodo, lado y proyecto). */
+function syncTrayChildren(trayId) {
+  const tray = get('SELECT rack_id, node_id, rack_side, project_id FROM devices WHERE id = ?', trayId);
+  if (!tray) return;
+  run(`UPDATE devices SET rack_id = ?, node_id = ?, rack_side = ?, project_id = ?, rack_u = NULL WHERE parent_id = ?`,
+    tray.rack_id, tray.node_id, tray.rack_side, tray.project_id, trayId);
+}
+
 /** Mantiene los trazados de cables al mover (lat/lng) o eliminar (null) un poste. */
 function syncPolePaths(poleId, lat, lng, projectId) {
   for (const f of all('SELECT id, path FROM fiber_elements WHERE path IS NOT NULL AND project_id = ?', projectId)) {
@@ -59,8 +67,29 @@ function syncPolePaths(poleId, lat, lng, projectId) {
 }
 
 // ---------- Validaciones de dominio ----------
+const MAX_TRAY_DEVICES = 8;   // equipos pequeños por bandeja (el editor gráfico los dibuja en una fila)
 function validateRackPlacement(data, current) {
   const merged = { ...current, ...data };
+  // Una bandeja con equipos no puede cambiar a otro tipo (los equipos solo van dentro de bandejas)
+  if (current && merged.type !== 'tray' && get('SELECT 1 AS x FROM devices WHERE parent_id = ?', current.id)) {
+    throw conflict('Esta bandeja contiene equipos: retírelos antes de cambiar su tipo');
+  }
+  if (merged.parent_id != null) {
+    // Equipo dentro de una bandeja: hereda rack, nodo y lado de la bandeja; no ocupa U propias.
+    const tray = get('SELECT * FROM devices WHERE id = ?', merged.parent_id);
+    if (!tray) throw bad('Bandeja inexistente');
+    if (tray.id === current?.id) throw bad('Un equipo no puede estar dentro de sí mismo');
+    if (tray.type !== 'tray') throw bad('Solo se pueden colocar equipos dentro de una bandeja, no dentro de otro equipo');
+    if (merged.type === 'tray') throw bad('Una bandeja no puede ir dentro de otra bandeja');
+    const inside = get('SELECT COUNT(*) AS n FROM devices WHERE parent_id = ? AND id <> ?', tray.id, current?.id ?? -1).n;
+    if (inside >= MAX_TRAY_DEVICES) throw conflict(`La bandeja «${tray.name}» ya tiene el máximo de ${MAX_TRAY_DEVICES} equipos`);
+    data.rack_id = tray.rack_id;
+    data.node_id = tray.node_id;
+    data.rack_side = tray.rack_side;
+    data.rack_u = null;
+    data.u_height = merged.u_height || 1;
+    return;
+  }
   if (merged.rack_id == null) {
     data.rack_u = null;
     return;
@@ -259,6 +288,7 @@ function mount(entity, path = entity) {
         if (np !== undefined && np !== current.project_id) data.project_id = np;
         const cols = Object.keys(data);
         run(`UPDATE ${def.table} SET ${cols.map((c) => `${c} = ?`).join(',')}, updated_at = datetime('now') WHERE id = ?`, ...cols.map((c) => data[c]), id);
+        if (entity === 'devices') syncTrayChildren(id);
         if (entity === 'poles' && ('lat' in data || 'lng' in data)) syncPolePaths(id, data.lat ?? current.lat, data.lng ?? current.lng, current.project_id);
       });
     } catch (e) { throw e instanceof HttpError ? e : friendlyDbError(e); }
@@ -270,7 +300,14 @@ function mount(entity, path = entity) {
   router.delete(`/${path}/:id`, require_('write'), wrap((req, res) => {
     const id = intParam(req.params.id);
     const current = row(entity, id);
-    try { tx(() => { if (entity === 'poles') syncPolePaths(id, null, null, current.project_id); run(`DELETE FROM ${def.table} WHERE id = ?`, id); }); } catch (e) { throw friendlyDbError(e); }
+    try {
+      tx(() => {
+        if (entity === 'poles') syncPolePaths(id, null, null, current.project_id);
+        // Al eliminar una bandeja, sus equipos no se borran: quedan sin rack en el inventario del nodo
+        if (entity === 'devices') run('UPDATE devices SET parent_id = NULL, rack_id = NULL, rack_u = NULL WHERE parent_id = ?', id);
+        run(`DELETE FROM ${def.table} WHERE id = ?`, id);
+      });
+    } catch (e) { throw friendlyDbError(e); }
     audit(req.user, 'eliminar', entity, id, `Eliminó ${def.label} «${current[def.nameField] ?? id}»`, current, null);
     res.json({ ok: true });
   }));
@@ -377,7 +414,9 @@ router.get('/devices/:id/full', wrap((req, res) => {
   const node = dev.node_id ? get('SELECT id, name, code FROM nodes WHERE id = ?', dev.node_id) : null;
   const rack = dev.rack_id ? get('SELECT id, name, units FROM racks WHERE id = ?', dev.rack_id) : null;
   const logical = all(`${CONN_SELECT} WHERE c.layer = 'logical' AND (c.a_device_id = ? OR c.b_device_id = ?)`, id, id);
-  res.json({ ...dev, node, rack, ports: portsWithLinks([id]).get(id) || [], logical });
+  const parent = dev.parent_id ? get('SELECT id, name, rack_u, u_height FROM devices WHERE id = ?', dev.parent_id) : null;
+  const children = dev.type === 'tray' ? all('SELECT id, name, type, brand, model, status FROM devices WHERE parent_id = ? ORDER BY id', id) : [];
+  res.json({ ...dev, node, rack, parent, children, ports: portsWithLinks([id]).get(id) || [], logical });
 }));
 
 router.get('/racks/:id/full', wrap((req, res) => {

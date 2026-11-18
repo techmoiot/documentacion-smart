@@ -29,6 +29,8 @@ export const DEVICE_TYPE = {
   server: { label: 'Servidor', color: '#6366f1' },
   radio: { label: 'Equipo de radio', color: '#ec4899' },
   onu: { label: 'ONU / terminal', color: '#10b981' },
+  tray: { label: 'Bandeja', color: '#8b5cf6' },
+  media_converter: { label: 'Media converter', color: '#06b6d4' },
   other: { label: 'Otro', color: '#94a3b8' },
 };
 
@@ -114,6 +116,12 @@ export const TEMPLATES = [
   { id: 'srv1', label: 'Servidor 1U', type: 'server', brand: '', model: '', u: 1, groups: [g('rj45', 'eth', 2, '1G'), g('mgmt', 'iDRAC', 1)] },
   { id: 'srv2', label: 'Servidor 2U', type: 'server', brand: '', model: '', u: 2, groups: [g('rj45', 'eth', 4, '1G'), g('sfp+', 'SFP+', 2, '10G'), g('mgmt', 'iDRAC', 1)] },
   { id: 'radio', label: 'Equipo de radio (PoE)', type: 'radio', brand: '', model: '', u: 1, groups: [g('rj45', 'LAN', 2, '1G')] },
+  { id: 'tray1', label: 'Bandeja 1U (para equipos pequeños)', type: 'tray', brand: '', model: 'Bandeja 1U', u: 1, groups: [] },
+  { id: 'tray2', label: 'Bandeja 2U (para equipos pequeños)', type: 'tray', brand: '', model: 'Bandeja 2U', u: 2, groups: [] },
+  { id: 'mc', label: 'Media converter (1 RJ45 + 1 fibra)', type: 'media_converter', brand: '', model: '', u: 1, groups: [g('rj45', 'LAN', 1, '1G'), g('fiber', 'FO', 1)], small: true },
+  { id: 'mc-sfp', label: 'Media converter (1 RJ45 + 1 SFP)', type: 'media_converter', brand: '', model: '', u: 1, groups: [g('rj45', 'LAN', 1, '1G'), g('sfp', 'SFP', 1, '1G')], small: true },
+  { id: 'poe5', label: 'Switch PoE pequeño 5 puertos', type: 'switch', brand: '', model: 'PoE 5p', u: 1, groups: [g('rj45', 'PoE', 4, '1G'), g('rj45', 'UP', 1, '1G', 1)], small: true },
+  { id: 'poe8', label: 'Switch PoE pequeño 8 puertos + 2 SFP', type: 'switch', brand: '', model: 'PoE 8p', u: 1, groups: [g('rj45', 'PoE', 8, '1G'), g('sfp', 'SFP', 2, '1G')], small: true },
   { id: 'otro', label: 'Otro equipo (sin puertos)', type: 'other', brand: '', model: '', u: 1, groups: [] },
 ];
 
