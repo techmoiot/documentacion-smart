@@ -35,7 +35,7 @@ export const ENTITIES = {
   devices: {
     table: 'devices', label: 'equipo', nameField: 'name',
     fields: {
-      node_id: int, rack_id: int, rack_u: int, u_height: int, parent_id: int, name: text, type: oneOf(DEVICE_TYPES), brand: text,
+      node_id: int, rack_id: int, rack_u: num, u_height: int, parent_id: int, name: text, type: oneOf(DEVICE_TYPES), brand: text,
       model: text, rack_side: oneOf(['front', 'rear', 'both']), serial: text, ip: text, mac: text, firmware: text, location: text, status: oneOf(STATUSES),
       installed_at: date, notes: text,
     },

@@ -97,7 +97,10 @@ function validateRackPlacement(data, current) {
   const rack = get('SELECT * FROM racks WHERE id = ?', merged.rack_id);
   if (!rack) throw bad('Rack inexistente');
   if (merged.rack_u == null) throw bad('Indique la posición U dentro del rack');
-  const bottom = merged.rack_u, top = merged.rack_u + (merged.u_height || 1) - 1;
+  // La posición puede quedar entre dos U (por ejemplo 46.5): se admiten pasos de media U
+  if (!Number.isFinite(merged.rack_u) || Math.abs(merged.rack_u * 2 - Math.round(merged.rack_u * 2)) > 1e-9) throw bad('La posición debe ser múltiplo de 0.5 U (ej. 46 o 46.5)');
+  const height = merged.u_height || 1;
+  const bottom = merged.rack_u, top = merged.rack_u + height - 1;
   if (bottom < 1 || top > rack.units) throw bad(`El equipo no cabe: el rack tiene ${rack.units} U (ocuparía U${bottom}–U${top})`);
   const side = merged.rack_side || 'front';
   const others = all('SELECT id, name, rack_u, u_height, rack_side FROM devices WHERE rack_id = ? AND id <> ?', rack.id, current?.id ?? -1);
@@ -105,7 +108,7 @@ function validateRackPlacement(data, current) {
     const os = o.rack_side || 'front';
     if (side !== 'both' && os !== 'both' && side !== os) continue; // frente y atrás son independientes
     const ob = o.rack_u, ot = o.rack_u + o.u_height - 1;
-    if (bottom <= ot && top >= ob) throw conflict(`La posición se solapa con "${o.name}" (U${ob}–U${ot}, ${os === 'both' ? 'frente y atrás' : os === 'rear' ? 'atrás' : 'frente'})`);
+    if (bottom < o.rack_u + o.u_height && ob < bottom + height) throw conflict(`La posición se solapa con "${o.name}" (U${ob}–U${ot}, ${os === 'both' ? 'frente y atrás' : os === 'rear' ? 'atrás' : 'frente'})`);
   }
   data.node_id = rack.node_id; // el equipo pertenece al nodo del rack
 }

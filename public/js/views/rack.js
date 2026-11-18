@@ -10,6 +10,7 @@ const UH = 46, TOP = 16, NUM_W = 36, RAIL = 16, INNER = 720, LANE = 230, LABEL_W
 const X0 = NUM_W + RAIL, X1 = X0 + INNER, LANE_X = X1 + RAIL + 24;
 const W = X1 + RAIL + LANE;
 
+const STEP = 0.5;      // paso de posición en el rack: media U (un equipo puede quedar entre dos U)
 const MAX_TRAY = 8;   // equipos por bandeja (igual que el servidor)
 const TRAY_LABEL_W = 150, CH_GAP = 8, CH_TOP = 14;
 
@@ -151,8 +152,8 @@ export async function rackView(root, node, rackId, query = {}) {
     const totalH = TOP * 2 + rack.units * UH;
     if (fullView || !rack.devices.length) { ctrl.fit({ x: 0, y: 0, w: W, h: totalH }, 10, 1.6); return; }
     // Encuadre inicial: zona ocupada (+1 U de margen), para ver los equipos con detalle
-    const minU = Math.max(1, Math.min(...rack.devices.map((d) => d.rack_u)) - 1);
-    const maxU = Math.min(rack.units, Math.max(...rack.devices.map((d) => d.rack_u + d.u_height - 1)) + 1);
+    const minU = Math.max(1, Math.floor(Math.min(...rack.devices.map((d) => d.rack_u))) - 1);
+    const maxU = Math.min(rack.units, Math.ceil(Math.max(...rack.devices.map((d) => d.rack_u + d.u_height - 1))) + 1);
     const y = slotY(maxU), hh = (maxU - minU + 1) * UH;
     ctrl.fit({ x: 0, y, w: W, h: hh }, 10, 1.6);
   }
@@ -173,7 +174,8 @@ export async function rackView(root, node, rackId, query = {}) {
       s('rect', { x: X0, y: TOP, width: INNER, height: rack.units * UH, fill: '#070d1a' }));
 
     const occupied = new Set();
-    for (const d of rack.devices) for (let u = d.rack_u; u < d.rack_u + d.u_height; u++) occupied.add(u);
+    // Una ranura (U entera) cuenta como ocupada si algún equipo la toca, aunque sea a medias
+    for (const d of rack.devices) for (let u = Math.floor(d.rack_u); u < d.rack_u + d.u_height; u++) occupied.add(u);
 
     // Numeración y ranuras vacías
     for (let u = 1; u <= rack.units; u++) {
@@ -372,10 +374,10 @@ export async function rackView(root, node, rackId, query = {}) {
       const dy = (e.clientY - drag.y) / ctrl.scale;
       if (!drag.moved && Math.abs(dy) < 6) return;
       drag.moved = true;
-      let nu = d.rack_u - Math.round(dy / UH);
+      let nu = d.rack_u - Math.round(dy / (UH * STEP)) * STEP;   // se ajusta a la media U más cercana
       nu = Math.max(1, Math.min(rack.units - d.u_height + 1, nu));
       drag.u = nu;
-      const bad = rack.devices.some((o) => o.id !== d.id && nu <= o.rack_u + o.u_height - 1 && nu + d.u_height - 1 >= o.rack_u);
+      const bad = rack.devices.some((o) => o.id !== d.id && nu < o.rack_u + o.u_height && o.rack_u < nu + d.u_height);
       const gh = ghost();
       gh.setAttribute('y', TOP + (rack.units - (nu + d.u_height - 1)) * UH);
       gh.setAttribute('height', d.u_height * UH);
@@ -475,12 +477,8 @@ export async function rackView(root, node, rackId, query = {}) {
 
   /** Primera U libre en el lado visible (para proponer posición a una bandeja nueva). */
   function firstFreeU(height = 1) {
-    const used = new Set();
-    for (const d of rack.devices) for (let u = d.rack_u; u < d.rack_u + d.u_height; u++) used.add(u);
-    for (let u = 1; u + height - 1 <= rack.units; u++) {
-      let ok = true;
-      for (let k = 0; k < height; k++) if (used.has(u + k)) { ok = false; break; }
-      if (ok) return u;
+    for (let u = 1; u + height - 1 <= rack.units; u += STEP) {
+      if (!rack.devices.some((o) => u < o.rack_u + o.u_height && o.rack_u < u + height)) return u;
     }
     return null;
   }

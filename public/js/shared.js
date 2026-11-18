@@ -118,7 +118,7 @@ export async function deviceForm({ device = null, node_id = null, rack_id = null
     },
     { name: 'rack_id', label: 'Rack', type: 'select', options: rackOptions(values.node_id) },
     { name: 'rack_side', label: 'Lado del rack', type: 'select', options: [['front', 'Frente'], ['rear', 'Atrás (posterior)'], ['both', 'Ambos lados (profundidad completa)']] },
-    { name: 'rack_u', label: 'Posición U (unidad inferior que ocupa)', type: 'number', min: 1, max: 60 },
+    { name: 'rack_u', label: 'Posición U (unidad inferior que ocupa)', type: 'number', min: 1, max: 60, step: 0.5, hint: 'Puede quedar entre dos U: use 46.5 para ubicarlo entre U46 y U47.' },
     ]),
     ...(inTray ? [] : [{ name: 'u_height', label: 'Altura (U)', type: 'number', min: 1, max: 20, required: true }]),
     ...(inTray ? [] : [{ name: 'location', label: 'Ubicación física (si no está en rack)', span: 2 }]),

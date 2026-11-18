@@ -176,6 +176,23 @@ test('rack: frente y atrás son independientes; plantillas personalizadas', asyn
   assert.equal((await call('admin', 'DELETE', `/api/device-templates/${t.data.id}`)).status, 200);
 });
 
+test('rack: posiciones intermedias (media U) y choques entre equipos', async () => {
+  const n = (await call('admin', 'POST', '/api/nodes', { code: 'MU-1', name: 'N media U' })).data;
+  const rk = (await call('admin', 'POST', '/api/racks', { node_id: n.id, name: 'RM', units: 10 })).data;
+  const mk = (rack_u, u_height = 1) => call('admin', 'POST', '/api/devices', { name: `D${rack_u}-${u_height}`, rack_id: rk.id, rack_u, u_height });
+  const a = await mk(4);                                        // ocupa U4 completa
+  assert.equal(a.status, 201);
+  assert.equal((await mk(4.5)).status, 409);                    // mitad de U4 y mitad de U5: choca con U4
+  assert.equal((await mk(5)).status, 201);                      // justo encima
+  assert.equal((await mk(2.5)).status, 201);                    // entre U2 y U3
+  assert.equal((await mk(3.5, 1)).status, 409);                 // 3.5–4.5 choca con U4
+  assert.equal((await mk(3.3)).status, 400);                    // solo pasos de 0.5
+  assert.equal((await call('admin', 'PATCH', `/api/devices/${a.data.id}`, { rack_u: 3 })).status, 409);            // 3 choca con el de 2.5 (que llega a 3.5)
+  assert.equal((await mk(9.5, 2)).status, 400);                 // no cabe en 10 U
+  assert.equal((await call('admin', 'GET', `/api/devices/${a.data.id}`)).data.rack_u, 4);
+  assert.equal((await mk(9.5)).status, 201);                    // queda entre U9 y U10, dentro del rack
+});
+
 test('bandejas: equipos pequeños solo dentro de una bandeja, no dentro de otros equipos', async () => {
   const n = (await call('admin', 'POST', '/api/nodes', { code: 'BJ-1', name: 'N bandeja' })).data;
   const rk = (await call('admin', 'POST', '/api/racks', { node_id: n.id, name: 'RB', units: 10 })).data;
