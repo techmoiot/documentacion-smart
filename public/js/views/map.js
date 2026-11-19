@@ -53,12 +53,17 @@ export async function mapView(root, query = {}) {
   };
   const popupFor = (n) => {
     const nt = NODE_TYPE[n.type] || NODE_TYPE.otro;
+    const isTower = n.type === 'torre' || n.type === 'repetidor';
     return h('div', null, h('h4', null, n.name),
       h('div', { class: 'row gap' }, h('span', { class: 'chip', style: { '--c': nt.color } }, nt.label), badge(n.status)),
       h('div', { class: 'muted small', style: { margin: '6px 0' } }, `${n.code} · ${n.device_count} equipos · ${n.antenna_count} antenas`),
+      isTower && (n.structure || n.height_m != null) ? h('div', { class: 'small' }, [n.structure, n.height_m != null ? `${n.height_m} m` : null].filter(Boolean).join(' · ')) : null,
       n.address ? h('div', { class: 'small' }, n.address) : null,
       h('div', { class: 'row gap wrap', style: { marginTop: '10px' } },
-        btn('Abrir nodo', { kind: 'primary', onClick: () => go(`#/nodo/${n.id}`) }), btn('Equipos', { onClick: () => go(`#/nodo/${n.id}/equipos`) }), btn('Impacto', { ic: 'alert', onClick: () => showImpact('node', n.id) })));
+        btn('Abrir nodo', { kind: 'primary', onClick: () => go(`#/nodo/${n.id}`) }), btn('Equipos', { onClick: () => go(`#/nodo/${n.id}/equipos`) }),
+        isTower ? btn('Planta externa', { ic: 'fiber', title: 'Ver la torre junto a la fibra y sus radioenlaces', onClick: () => go(`#/planta?tower=${n.id}`) }) : null,
+        isTower ? btn('Radioenlaces', { ic: 'radio', onClick: () => go(`#/radioenlaces?site=${n.id}`) }) : null,
+        btn('Impacto', { ic: 'alert', onClick: () => showImpact('node', n.id) })));
   };
   const placed = data.nodes.filter((n) => n.lat != null && n.lng != null);
   for (const n of placed) {

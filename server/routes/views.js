@@ -53,7 +53,7 @@ function radiolinkRows(rf) {
 router.get('/map', wrap((_req, res) => {
   const f = (c) => selectedFilter(c);
   const nodes = all(
-    `SELECT n.id, n.project_id, n.code, n.name, n.type, n.status, n.lat, n.lng, n.address,
+    `SELECT n.id, n.project_id, n.code, n.name, n.type, n.status, n.lat, n.lng, n.address, n.height_m, n.structure,
        (SELECT COUNT(*) FROM devices d WHERE d.node_id = n.id) AS device_count,
        (SELECT COUNT(*) FROM antennas a WHERE a.node_id = n.id) AS antenna_count
      FROM nodes n WHERE ${f('n.project_id').sql}`, ...f('n.project_id').params);
