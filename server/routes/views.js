@@ -36,6 +36,19 @@ router.get('/stats', wrap((_req, res) => {
   });
 }));
 
+/** Radioenlaces con las coordenadas de sus dos extremos (antena o, si no tiene, su nodo). */
+function radiolinkRows(rf) {
+  return all(
+    `SELECT r.id, r.project_id, r.name, r.link_type, r.status, r.freq_mhz, r.rssi_dbm, r.capacity, r.a_antenna_id, r.b_antenna_id,
+       aa.name AS a_name, ab.name AS b_name,
+       COALESCE(aa.lat, na.lat) AS a_lat, COALESCE(aa.lng, na.lng) AS a_lng, aa.node_id AS a_node_id, na.name AS a_node_name,
+       COALESCE(ab.lat, nb.lat) AS b_lat, COALESCE(ab.lng, nb.lng) AS b_lng, ab.node_id AS b_node_id, nb.name AS b_node_name
+     FROM radiolinks r
+     JOIN antennas aa ON aa.id = r.a_antenna_id JOIN nodes na ON na.id = aa.node_id
+     JOIN antennas ab ON ab.id = r.b_antenna_id JOIN nodes nb ON nb.id = ab.node_id
+     WHERE ${rf.sql}`, ...rf.params);
+}
+
 // Datos para el mapa geográfico
 router.get('/map', wrap((_req, res) => {
   const f = (c) => selectedFilter(c);
@@ -44,15 +57,7 @@ router.get('/map', wrap((_req, res) => {
        (SELECT COUNT(*) FROM devices d WHERE d.node_id = n.id) AS device_count,
        (SELECT COUNT(*) FROM antennas a WHERE a.node_id = n.id) AS antenna_count
      FROM nodes n WHERE ${f('n.project_id').sql}`, ...f('n.project_id').params);
-  const radiolinks = all(
-    `SELECT r.id, r.project_id, r.name, r.link_type, r.status, r.freq_mhz, r.rssi_dbm, r.capacity, r.a_antenna_id, r.b_antenna_id,
-       aa.name AS a_name, ab.name AS b_name,
-       COALESCE(aa.lat, na.lat) AS a_lat, COALESCE(aa.lng, na.lng) AS a_lng, aa.node_id AS a_node_id, na.name AS a_node_name,
-       COALESCE(ab.lat, nb.lat) AS b_lat, COALESCE(ab.lng, nb.lng) AS b_lng, ab.node_id AS b_node_id, nb.name AS b_node_name
-     FROM radiolinks r
-     JOIN antennas aa ON aa.id = r.a_antenna_id JOIN nodes na ON na.id = aa.node_id
-     JOIN antennas ab ON ab.id = r.b_antenna_id JOIN nodes nb ON nb.id = ab.node_id
-     WHERE ${f('r.project_id').sql}`, ...f('r.project_id').params);
+  const radiolinks = radiolinkRows(f('r.project_id'));
   // Fibra: cada elemento con coordenadas propias o las de su nodo
   const fiber = all(
     `SELECT f.id, f.project_id, f.kind, f.name, f.parent_id, f.status, f.props, f.path,
@@ -84,7 +89,10 @@ router.get('/planta', wrap((_req, res) => {
     try { f.props = JSON.parse(f.props); } catch { f.props = {}; }
     try { f.path = f.path ? JSON.parse(f.path) : null; } catch { f.path = null; }
   }
-  const nodes = all(`SELECT id, project_id, code, name, type, status, lat, lng FROM nodes WHERE lat IS NOT NULL AND ${pf.sql}`, ...pf.params);
+  const nodes = all(`SELECT id, project_id, code, name, type, status, lat, lng, height_m, structure, location, address, responsible, description FROM nodes WHERE lat IS NOT NULL AND ${pf.sql}`, ...pf.params);
+  // Torres: antenas de los sitios y radioenlaces entre ellos
+  const antennas = all(`SELECT id, project_id, node_id, name, role, height_m, azimuth, freq_mhz, status FROM antennas WHERE ${pf.sql} ORDER BY name`, ...pf.params);
+  const radiolinks = radiolinkRows(selectedFilter('r.project_id'));
   // lazos de ODF (un ODF unido consigo mismo): forman parte de la ruta de la fibra
   const cf = selectedFilter('c.project_id');
   const odfLoops = all(
@@ -92,7 +100,7 @@ router.get('/planta', wrap((_req, res) => {
      FROM connections c JOIN devices d ON d.id = c.a_device_id
      LEFT JOIN ports pa ON pa.id = c.a_port_id LEFT JOIN ports pb ON pb.id = c.b_port_id
      WHERE c.layer = 'physical' AND c.a_device_id = c.b_device_id AND ${cf.sql}`, ...cf.params);
-  res.json({ poles, elements, nodes, odfLoops });
+  res.json({ poles, elements, nodes, antennas, radiolinks, odfLoops });
 }));
 
 // ---------- Búsqueda global ----------

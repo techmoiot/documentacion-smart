@@ -1,6 +1,6 @@
 // Planta externa FTTH (estilo OZmap): postes, cables trazados sobre postes, cajas y clientes en el mapa
 import { api, projectCtx } from '../api.js';
-import { STATUS, FIBER_KIND, FIBER_PROPS, POLE_MATERIAL, cableColor } from '../catalog.js';
+import { STATUS, FIBER_KIND, FIBER_PROPS, POLE_MATERIAL, NODE_TYPE, cableColor } from '../catalog.js';
 import { h, btn, clear, go, state, can, haversineKm, fmtKm, badge, props, openPanel, closePanel, formModal, confirmBox, guard, toast } from '../ui.js';
 import { filesWidget, historyList, showImpact } from '../shared.js';
 import { strandsEditor } from '../strands.js';
@@ -8,6 +8,7 @@ import { addBaseMaps } from '../basemaps.js';
 import { importKmzWizard } from './import-kmz.js';
 import { upRows, downRows, traceCard, posOf } from '../trace.js';
 import { openSplice } from '../splice.js';
+import { towerForm, antennaForm } from './radio.js';
 
 const L = window.L;
 const sc = (st) => STATUS[st]?.color || '#94a3b8';
@@ -52,12 +53,19 @@ export async function plantaView(root, query = {}) {
   addBaseMaps(map, { maxNative: 19 });
   L.control.scale({ imperial: false }).addTo(map);
 
-  const G = { cables: L.layerGroup().addTo(map), poles: L.layerGroup().addTo(map), els: L.layerGroup().addTo(map), trace: L.layerGroup().addTo(map), draft: L.layerGroup().addTo(map), edit: L.layerGroup().addTo(map) };
+  const G = { cables: L.layerGroup().addTo(map), poles: L.layerGroup().addTo(map), els: L.layerGroup().addTo(map), towers: L.layerGroup(), rl: L.layerGroup(), trace: L.layerGroup().addTo(map), draft: L.layerGroup().addTo(map), edit: L.layerGroup().addTo(map) };
   let tool = 'select';        // select | pole | cable | nap | closure | splitter | client
   let draft = [];             // vértices del cable en trazado: {lat,lng,pole}
   let selected = null;        // {type:'pole'|'el', id}
   let editing = null;         // cable en edición de vértices
   const toolBtns = {};
+  // Submódulos del mapa: «fibra» (postes, cables, cajas) y «torres» (sitios de radio y radioenlaces)
+  let mode = query.mode === 'torres' || query.tower ? 'torres' : 'fibra';
+  const layerOn = { cables: true, poles: true, els: true, towers: true, rl: true };
+  let bgOn = true; // en «torres», mostrar la fibra de fondo
+  const TOWER_TYPES = ['torre', 'repetidor'];
+  const towers = () => data.nodes.filter((n) => TOWER_TYPES.includes(n.type));
+  const towerById = () => new Map(data.nodes.map((n) => [n.id, n]));
 
   const poleById = () => new Map(data.poles.map((p) => [p.id, p]));
   const elById = () => new Map(data.elements.map((e) => [e.id, e]));
@@ -71,11 +79,15 @@ export async function plantaView(root, query = {}) {
   }
 
   // Crear en el proyecto correcto: el único visible, o se pregunta cuando hay varios.
+  async function pickTarget() { return shown.length === 1 ? shown[0] : (await projectCtx.ask?.()) || null; }
+  function revealProject(target) {
+    if (shown.includes(target)) return;
+    shown = allIds.filter((id) => id === target || shown.includes(id)); saveShown(); renderProjList();
+  }
   async function postNew(url, body) {
-    let target = shown.length === 1 ? shown[0] : null;
-    if (!target) { target = await projectCtx.ask?.(); if (!target) return null; }
+    const target = await pickTarget(); if (!target) return null;
     const created = await guard(() => api.post(url, body, { target }));
-    if (created && !shown.includes(target)) { shown = allIds.filter((id) => id === target || shown.includes(id)); saveShown(); renderProjList(); }
+    if (created) revealProject(target);
     return created;
   }
 
@@ -97,7 +109,8 @@ export async function plantaView(root, query = {}) {
     return L.divIcon({ html: h('div', { class: `emark ${e.kind === 'client' ? 'round' : ''}`, style: { '--c': k.color, outline: sel ? '3px solid #22d3ee' : null } }, GLYPH[e.kind] || '?'), className: '', iconSize: [24, 24], iconAnchor: [12, 12] });
   }
   function draw() {
-    G.cables.clearLayers(); G.poles.clearLayers(); G.els.clearLayers();
+    G.cables.clearLayers(); G.poles.clearLayers(); G.els.clearLayers(); G.towers.clearLayers(); G.rl.clearLayers();
+    const fibraUI = mode === 'fibra';
     const count = { cables: 0, poles: data.poles.length, els: 0 };
     for (const e of data.elements) {
       if (e.kind === 'cable') {
@@ -106,14 +119,14 @@ export async function plantaView(root, query = {}) {
         const fib = Number(e.props?.fibras_total) || 0;
         const isSel = selected?.type === 'el' && selected.id === e.id;
         const col = e.status === 'operativo' ? cableColor(fib) : sc(e.status);
-        const line = L.polyline(e.path.map((p) => [p[0], p[1]]), { color: col, weight: isSel ? 7 : 4, opacity: 0.95 });
+        const line = L.polyline(e.path.map((p) => [p[0], p[1]]), { color: col, weight: fibraUI ? (isSel ? 7 : 4) : 3, opacity: fibraUI ? 0.95 : 0.45, interactive: fibraUI });
         const len = e.props?.longitud_m ?? pathLen(e.path);
         line.bindTooltip(`${e.name}${fib ? ` · ${fib} hilos` : ''} · ${fmtM(len)}`, { sticky: true });
         line.on('click', (ev) => { L.DomEvent.stopPropagation(ev); if (tool === 'select') selectEl(e.id); else if (tool === 'cable' || PLACEABLE.includes(tool)) mapClick(ev); });
         line.addTo(G.cables);
       } else if (e.lat != null && e.lng != null && e.own_lat != null) {
         count.els++;
-        const m = L.marker([e.lat, e.lng], { icon: elIcon(e, selected?.type === 'el' && selected.id === e.id), title: e.name, draggable: editable && tool === 'move' });
+        const m = L.marker([e.lat, e.lng], { icon: elIcon(e, selected?.type === 'el' && selected.id === e.id), title: e.name, draggable: fibraUI && editable && tool === 'move', interactive: fibraUI, opacity: fibraUI ? 1 : 0.5 });
         m.bindTooltip(`${FIBER_KIND[e.kind]?.label || e.kind}: ${e.name}`);
         m.on('click', (ev) => { L.DomEvent.stopPropagation(ev); if (tool === 'cable') addVertex(e.lat, e.lng, null); else if (tool === 'select' || tool === 'move') selectEl(e.id); });
         m.on('dragend', () => { const ll = m.getLatLng(); moveItem({ type: 'el', id: e.id, name: e.name, from: [e.lat, e.lng], to: [ll.lat, ll.lng] }); });
@@ -121,14 +134,89 @@ export async function plantaView(root, query = {}) {
       }
     }
     for (const p of data.poles) {
-      const m = L.marker([p.lat, p.lng], { icon: poleIcon(p, selected?.type === 'pole' && selected.id === p.id), title: p.code, draggable: editable && tool === 'move', zIndexOffset: -100 });
+      const m = L.marker([p.lat, p.lng], { icon: poleIcon(p, selected?.type === 'pole' && selected.id === p.id), title: p.code, draggable: fibraUI && editable && tool === 'move', zIndexOffset: -100, interactive: fibraUI, opacity: fibraUI ? 1 : 0.5 });
       m.bindTooltip(`Poste ${p.code}${p.name ? ' · ' + p.name : ''}`);
       m.on('click', (ev) => { L.DomEvent.stopPropagation(ev); if (tool === 'cable') addVertex(p.lat, p.lng, p.id); else if (tool === 'select' || tool === 'move') selectPole(p.id); });
       m.on('dragend', () => { const ll = m.getLatLng(); moveItem({ type: 'pole', id: p.id, name: `poste ${p.code}`, from: [p.lat, p.lng], to: [ll.lat, ll.lng] }); });
       m.addTo(G.poles);
     }
-    stats.textContent = `${count.poles} postes · ${count.cables} cables · ${count.els} cajas/clientes`;
+    if (fibraUI) stats.textContent = `${count.poles} postes · ${count.cables} cables · ${count.els} cajas/clientes`;
+    else { drawTowers(); stats.textContent = `${towers().length} torres · ${(data.antennas || []).length} antenas · ${(data.radiolinks || []).length} radioenlaces`; }
     drawDraft();
+  }
+
+  // ---------- Torres y radioenlaces ----------
+  function towerIcon(n, sel) {
+    const k = NODE_TYPE[n.type] || NODE_TYPE.otro;
+    return L.divIcon({ html: h('div', { class: 'emark tower', style: { '--c': k.color, '--st': sc(n.status), outline: sel ? '3px solid #22d3ee' : null } }, k.glyph), className: '', iconSize: [28, 28], iconAnchor: [14, 14] });
+  }
+  function drawTowers() {
+    const antCount = new Map();
+    for (const a of data.antennas || []) antCount.set(a.node_id, (antCount.get(a.node_id) || 0) + 1);
+    for (const r of data.radiolinks || []) {
+      if (r.a_lat == null || r.b_lat == null) continue;
+      const isSel = selected?.type === 'link' && selected.id === r.id;
+      const line = L.polyline([[r.a_lat, r.a_lng], [r.b_lat, r.b_lng]], { color: sc(r.status), weight: isSel ? 6 : 3, opacity: 0.9, dashArray: r.link_type === 'PTMP' ? '7 7' : null });
+      line.bindTooltip(`${r.name} · ${r.link_type}${r.freq_mhz ? ` · ${r.freq_mhz} MHz` : ''}`, { sticky: true });
+      line.on('click', (ev) => { L.DomEvent.stopPropagation(ev); if (tool === 'select') selectLink(r.id); });
+      line.addTo(G.rl);
+    }
+    for (const n of towers()) {
+      const m = L.marker([n.lat, n.lng], { icon: towerIcon(n, selected?.type === 'tower' && selected.id === n.id), title: n.name, draggable: editable && tool === 'move', zIndexOffset: 200 });
+      m.bindTooltip(`${(NODE_TYPE[n.type] || NODE_TYPE.otro).label}: ${n.name}${n.height_m ? ` · ${n.height_m} m` : ''} · ${antCount.get(n.id) || 0} antenas`);
+      m.on('click', (ev) => { L.DomEvent.stopPropagation(ev); if (tool === 'select' || tool === 'move') selectTower(n.id); });
+      m.on('dragend', () => { const ll = m.getLatLng(); moveItem({ type: 'node', id: n.id, name: n.name, from: [n.lat, n.lng], to: [ll.lat, ll.lng] }); });
+      m.addTo(G.towers);
+    }
+  }
+  function selectTower(id) {
+    select({ type: 'tower', id });
+    const n = towerById().get(id); if (!n) return;
+    const k = NODE_TYPE[n.type] || NODE_TYPE.otro;
+    const ants = (data.antennas || []).filter((a) => a.node_id === n.id);
+    const antIds = new Set(ants.map((a) => a.id));
+    const links = (data.radiolinks || []).filter((r) => antIds.has(r.a_antenna_id) || antIds.has(r.b_antenna_id));
+    const refresh = async () => { await reload(); selectTower(n.id); };
+    const body = h('div', null,
+      h('div', { class: 'row gap wrap', style: { marginBottom: '8px' } }, h('span', { class: 'chip', style: { '--c': k.color } }, k.label), badge(n.status)),
+      props([['Código', n.code], ['Estructura', n.structure], ['Altura', n.height_m != null ? `${n.height_m} m` : null], ['Coordenadas', `${n.lat.toFixed(6)}, ${n.lng.toFixed(6)}`], ['Ubicación', [n.location, n.address].filter(Boolean).join(' · ')], ['Responsable', n.responsible], ['Descripción', n.description]]),
+      h('h4', null, `Antenas (${ants.length})`),
+      ants.length ? h('ul', { class: 'plain' }, ants.map((a) => h('li', null, a.name, h('span', { class: 'muted small' }, ' ' + [a.role, a.height_m != null ? `${a.height_m} m` : null, a.azimuth != null ? `${a.azimuth}°` : null, a.freq_mhz ? `${a.freq_mhz} MHz` : null].filter(Boolean).join(' · ')))))
+        : h('p', { class: 'muted small' }, 'Esta torre aún no tiene antenas.'),
+      h('h4', null, `Radioenlaces (${links.length})`),
+      links.length ? h('ul', { class: 'plain' }, links.map((r) => h('li', null, h('a', { href: '#', onclick: (ev) => { ev.preventDefault(); selectLink(r.id); } }, r.name), h('span', { class: 'muted small' }, ` ${r.link_type}`)))) : h('p', { class: 'muted small' }, 'Sin radioenlaces.'),
+      h('div', { class: 'row gap wrap', style: { margin: '10px 0' } },
+        editable ? btn('Agregar antena', { ic: 'plus', kind: 'primary', onClick: async () => { if (await antennaForm(null, n.id)) { toast('Antena agregada'); await refresh(); } } }) : null,
+        can('update') ? btn('Editar torre', { ic: 'edit', onClick: async () => { if (await towerForm(n)) { toast('Torre actualizada'); await refresh(); } } }) : null,
+        btn('Radioenlaces', { ic: 'radio', onClick: () => go(`#/radioenlaces?site=${n.id}`) }),
+        btn('Abrir nodo', { onClick: () => go(`#/nodo/${n.id}`) }),
+        btn('Impacto', { ic: 'alert', onClick: () => showImpact('node', n.id) })),
+      h('h4', null, 'Fotografías y archivos'), filesWidget('node', n.id),
+      h('h4', null, 'Historial'), historyList('nodes', n.id, 10));
+    openPanel(n.name, body, { onClose: () => { selected = null; draw(); }, subtitle: 'Torre / sitio de radio' });
+    map.panTo([n.lat, n.lng]);
+    setTimeout(() => map.invalidateSize(), 80);
+  }
+  function selectLink(id) {
+    select({ type: 'link', id });
+    const r = (data.radiolinks || []).find((x) => x.id === id); if (!r) return;
+    const body = h('div', null,
+      props([['Tipo', r.link_type], ['Estado', badge(r.status)], ['Extremo A', `${r.a_node_name} · ${r.a_name}`], ['Extremo B', `${r.b_node_name} · ${r.b_name}`], ['Frecuencia', r.freq_mhz ? `${r.freq_mhz} MHz` : null], ['RSSI', r.rssi_dbm != null ? `${r.rssi_dbm} dBm` : null], ['Capacidad', r.capacity],
+        ['Distancia', fmtM(haversineKm(r.a_lat, r.a_lng, r.b_lat, r.b_lng) * 1000)]]),
+      h('div', { class: 'row gap wrap', style: { margin: '10px 0' } }, btn('Abrir en Radioenlaces', { ic: 'radio', onClick: () => go(`#/radioenlaces?link=${r.id}`) })));
+    openPanel(r.name, body, { onClose: () => { selected = null; draw(); }, subtitle: 'Radioenlace' });
+    setTimeout(() => map.invalidateSize(), 80);
+  }
+  async function placeTower(ll) {
+    const target = await pickTarget(); if (!target) return;
+    const codes = new Set(data.nodes.map((x) => x.code));
+    let i = towers().length + 1, code;
+    do { code = `TORRE-${String(i++).padStart(2, '0')}`; } while (codes.has(code));
+    const t = await towerForm(null, { target, values: { lat: Number(ll.lat.toFixed(6)), lng: Number(ll.lng.toFixed(6)), code } });
+    if (!t) return;
+    revealProject(target);
+    toast(`Torre ${t.name} creada`);
+    await reload(); selectTower(t.id);
   }
 
   // ---------- Deshacer / rehacer (movimientos y trazados) ----------
@@ -147,7 +235,7 @@ export async function plantaView(root, query = {}) {
       const props = { ...(cur?.props || {}), longitud_m: Math.round(pathLen(v)) };
       return guard(() => api.patch(`/api/fiber/${it.id}`, { path: v, props }));
     }
-    return guard(() => api.patch(it.type === 'pole' ? `/api/poles/${it.id}` : `/api/fiber/${it.id}`, { lat: v[0], lng: v[1] }));
+    return guard(() => api.patch(it.type === 'pole' ? `/api/poles/${it.id}` : it.type === 'node' ? `/api/nodes/${it.id}` : `/api/fiber/${it.id}`, { lat: v[0], lng: v[1] }));
   }
   async function moveItem(it) {
     if (Math.abs(it.from[0] - it.to[0]) < 1e-9 && Math.abs(it.from[1] - it.to[1]) < 1e-9) return;
@@ -307,9 +395,9 @@ export async function plantaView(root, query = {}) {
     bar.classList.toggle('hidden', tool === 'select' && !editing);
     clear(bar);
     if (editing) return;
-    const msg = { move: 'Modo mover: arrastre postes, cajas o clientes para reubicarlos. Ctrl+Z deshace el último movimiento.', pole: 'Haga clic en el mapa para colocar un poste.', cable: 'Haga clic en postes (se ajustan automáticamente) o en el mapa para trazar el cable. Doble clic o «Terminar» para finalizar.' }[tool]
+    const msg = { move: mode === 'torres' ? 'Modo mover: arrastre las torres para reubicarlas. Ctrl+Z deshace el último movimiento.' : 'Modo mover: arrastre postes, cajas o clientes para reubicarlos. Ctrl+Z deshace el último movimiento.', tower: 'Haga clic en el mapa donde está la torre: se abrirá el formulario con las coordenadas ya cargadas.', pole: 'Haga clic en el mapa para colocar un poste.', cable: 'Haga clic en postes (se ajustan automáticamente) o en el mapa para trazar el cable. Doble clic o «Terminar» para finalizar.' }[tool]
       || `Haga clic en el mapa para colocar: ${FIBER_KIND[tool]?.label || ''}.`;
-    bar.append(h('span', null, msg), tool === 'move' ? btn('Deshacer', { ic: 'undo', onClick: () => undo() }) : null, btn(tool === 'move' ? 'Terminar de mover' : 'Salir', { onClick: () => setTool('select') }));
+    bar.append(...[h('span', null, msg), tool === 'move' ? btn('Deshacer', { ic: 'undo', onClick: () => undo() }) : null, btn(tool === 'move' ? 'Terminar de mover' : 'Salir', { onClick: () => setTool('select') })].filter(Boolean));
   }
 
   const snap = (ll) => {
@@ -333,6 +421,7 @@ export async function plantaView(root, query = {}) {
       if (created) { toast(`Poste ${created.code} creado`); await reload(); }
       return;
     }
+    if (tool === 'tower') { placeTower(ll); return; }
     if (tool === 'cable') { const p = snap(ll); addVertex(p ? p.lat : ll.lat, p ? p.lng : ll.lng, p ? p.id : null); return; }
     if (PLACEABLE.includes(tool)) placeElement(tool, ll);
   }
@@ -461,7 +550,6 @@ export async function plantaView(root, query = {}) {
 
   // ---------- Panel de herramientas ----------
   const stats = h('div', { class: 'muted small', style: { padding: '0 4px' } });
-  const toolBtn = (key, label, ic) => (toolBtns[key] = btn(label, { ic, onClick: () => setTool(key) }));
   ctl.append(h('strong', { style: { padding: '2px 4px' } }, 'Planta externa'), stats);
   const projBox = h('div', { class: 'proj-pick' });
   function renderProjList() {
@@ -473,32 +561,82 @@ export async function plantaView(root, query = {}) {
       projBox.append(h('label', { title: p.name }, i, h('span', { class: 'dotc', style: { background: p.color } }), h('span', { class: 'pname' }, p.name)));
     }
   }
-  ctl.append(h('h5', null, 'Proyectos en el mapa'), projBox);
+  const projHead = h('h5', null, 'Proyectos en el mapa');
+  ctl.append(projHead, projBox);
   renderProjList();
-  toolBtns.select = btn('Seleccionar', { ic: 'map', onClick: () => setTool('select') });
-  toolBtns.select.classList.add('on');
-  ctl.append(toolBtns.select);
-  if (editable) {
-    ctl.append(h('h5', null, 'Editar'), toolBtn('move', 'Mover elementos', 'map'), h('div', { class: 'row gap' }, undoBtn, redoBtn));
-    ctl.append(h('h5', null, 'Dibujar'), toolBtn('pole', 'Poste', 'plus'), toolBtn('cable', 'Cable de fibra', 'fiber'));
-    ctl.append(h('h5', null, 'Colocar'), ...PLACEABLE.map((k) => toolBtn(k, FIBER_KIND[k].label.split(' /')[0], 'plus')));
-  } else ctl.append(h('p', { class: 'muted small' }, 'Su rol es de consulta: no puede editar la planta.'));
-  const toggle = (label, g, on = true) => {
-    const i = h('input', { type: 'checkbox', checked: on, onchange: () => (i.checked ? g.addTo(map) : map.removeLayer(g)) });
+  const toolBtn = (key, label, ic) => (toolBtns[key] = btn(label, { ic, onClick: () => setTool(key) }));
+  const toggle = (label, key) => {
+    const i = h('input', { type: 'checkbox', checked: layerOn[key], onchange: () => { layerOn[key] = i.checked; applyLayers(); } });
     return h('label', null, i, label);
   };
-  ctl.append(h('h5', null, 'Capas'), toggle('Cables', G.cables), toggle('Postes', G.poles), toggle('Cajas y clientes', G.els),
-    editable ? h('h5', null, 'Migración') : null,
-    editable ? btn('Importar KMZ / KML', { ic: 'plus', onClick: () => importKmzWizard({ onDone: () => go(location.hash) }) }) : null,
-    btn('Ajustar a la planta', { ic: 'fit', onClick: fit }),
-    h('h5', null, 'Leyenda'),
-    ...[['≤12 hilos', cableColor(12)], ['13–48', cableColor(24)], ['49–96', cableColor(72)], ['>96', cableColor(144)]].map(([l, c]) => h('div', { class: 'small', style: { display: 'flex', gap: '8px', alignItems: 'center' } }, h('span', { class: 'dotc', style: { background: c } }), l)));
+  const legendRow = (label, swatch) => h('div', { class: 'small', style: { display: 'flex', gap: '8px', alignItems: 'center' } }, swatch, label);
+  const dot = (c) => h('span', { class: 'dotc', style: { background: c } });
+  const lineSw = (style) => h('span', { style: { width: '18px', flex: 'none', borderTop: `3px ${style} #94a3b8` } });
+
+  function applyLayers() {
+    const bg = mode === 'fibra' || bgOn;
+    const vis = { cables: layerOn.cables && bg, poles: layerOn.poles && bg, els: layerOn.els && bg, towers: layerOn.towers && mode === 'torres', rl: layerOn.rl && mode === 'torres' };
+    for (const [k, on] of Object.entries(vis)) { if (on) G[k].addTo(map); else map.removeLayer(G[k]); }
+  }
+
+  function renderTools() {
+    clear(toolsBox);
+    for (const k of Object.keys(toolBtns)) delete toolBtns[k];
+    toolBtns.select = btn('Seleccionar', { ic: 'map', onClick: () => setTool('select') });
+    toolBtns.select.classList.add('on');
+    toolsBox.append(toolBtns.select);
+    if (mode === 'torres') {
+      if (editable) toolsBox.append(h('h5', null, 'Editar'), toolBtn('move', 'Mover torres', 'map'), h('div', { class: 'row gap' }, undoBtn, redoBtn), h('h5', null, 'Colocar'), toolBtn('tower', 'Torre / sitio', 'plus'));
+      else toolsBox.append(h('p', { class: 'muted small' }, 'Su rol es de consulta: no puede editar las torres.'));
+      const bg = h('input', { type: 'checkbox', checked: bgOn, onchange: () => { bgOn = bg.checked; applyLayers(); } });
+      toolsBox.append(h('h5', null, 'Capas'), toggle('Torres y repetidores', 'towers'), toggle('Radioenlaces', 'rl'), h('label', null, bg, 'Fibra de fondo'),
+        btn('Ajustar a las torres', { ic: 'fit', onClick: fit }),
+        h('h5', null, 'Leyenda'),
+        legendRow('Torre', dot(NODE_TYPE.torre.color)), legendRow('Repetidor', dot(NODE_TYPE.repetidor.color)),
+        legendRow('Enlace PTP', lineSw('solid')), legendRow('Enlace PTMP', lineSw('dashed')),
+        h('p', { class: 'muted small', style: { margin: '2px 4px' } }, 'El color del enlace es su estado.'));
+      return;
+    }
+    if (editable) {
+      toolsBox.append(h('h5', null, 'Editar'), toolBtn('move', 'Mover elementos', 'map'), h('div', { class: 'row gap' }, undoBtn, redoBtn));
+      toolsBox.append(h('h5', null, 'Dibujar'), toolBtn('pole', 'Poste', 'plus'), toolBtn('cable', 'Cable de fibra', 'fiber'));
+      toolsBox.append(h('h5', null, 'Colocar'), ...PLACEABLE.map((k) => toolBtn(k, FIBER_KIND[k].label.split(' /')[0], 'plus')));
+    } else toolsBox.append(h('p', { class: 'muted small' }, 'Su rol es de consulta: no puede editar la planta.'));
+    toolsBox.append(h('h5', null, 'Capas'), toggle('Cables', 'cables'), toggle('Postes', 'poles'), toggle('Cajas y clientes', 'els'),
+      editable ? h('h5', null, 'Migración') : null,
+      editable ? btn('Importar KMZ / KML', { ic: 'plus', onClick: () => importKmzWizard({ onDone: () => go(location.hash) }) }) : null,
+      btn('Ajustar a la planta', { ic: 'fit', onClick: fit }),
+      h('h5', null, 'Leyenda'),
+      ...[['≤12 hilos', cableColor(12)], ['13–48', cableColor(24)], ['49–96', cableColor(72)], ['>96', cableColor(144)]].map(([l, c]) => legendRow(l, dot(c))));
+  }
+
+  const tabs = h('div', { class: 'chips', style: { padding: '2px 0' } });
+  function renderTabs() {
+    clear(tabs);
+    for (const [k, l] of [['fibra', 'Fibra'], ['torres', 'Torres']]) tabs.append(h('button', { type: 'button', class: `chip-tab${mode === k ? ' active' : ''}`, onclick: () => setMode(k) }, l));
+  }
+  function setMode(m) {
+    if (m === mode) return;
+    mode = m; closePanel(true); selected = null;
+    renderTabs(); renderTools(); applyLayers(); setTool('select'); fit();
+  }
+  const toolsBox = h('div', { class: 'tool-sec' });
+  ctl.append(toolsBox);
+  ctl.insertBefore(tabs, projHead);
+  renderTabs(); renderTools(); applyLayers();
 
   function fit() {
-    const pts = [...data.poles.map((p) => [p.lat, p.lng]), ...data.elements.filter((e) => e.own_lat != null).map((e) => [e.lat, e.lng]), ...data.elements.flatMap((e) => (e.path || []).map((p) => [p[0], p[1]]))];
-    if (!pts.length) pts.push(...data.nodes.map((n) => [n.lat, n.lng]));
-    if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.2), { maxZoom: 18 });
+    let pts = [];
+    if (mode === 'torres') {
+      pts = [...towers().map((n) => [n.lat, n.lng]), ...(data.radiolinks || []).flatMap((r) => [[r.a_lat, r.a_lng], [r.b_lat, r.b_lng]]).filter((p) => p[0] != null)];
+    }
+    if (!pts.length) {
+      pts = [...data.poles.map((p) => [p.lat, p.lng]), ...data.elements.filter((e) => e.own_lat != null).map((e) => [e.lat, e.lng]), ...data.elements.flatMap((e) => (e.path || []).map((p) => [p[0], p[1]]))];
+      if (!pts.length) pts.push(...data.nodes.map((n) => [n.lat, n.lng]));
+    }
+    if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.2), { maxZoom: mode === 'torres' ? 16 : 18 });
   }
+
 
   // Esc cancela
   const onKey = (ev) => {
@@ -513,12 +651,13 @@ export async function plantaView(root, query = {}) {
   undoUI();
   draw(); fit();
   setTimeout(() => map.invalidateSize(), 60);
-  // Enlaces directos (#/planta?pole=… / ?sel=…): si el elemento es de un proyecto oculto, se muestran todos.
-  if (query.pole || query.sel) {
-    const find = () => (query.pole ? poleById().get(Number(query.pole)) : elById().get(Number(query.sel)));
+  // Enlaces directos (#/planta?pole=… / ?sel=… / ?tower=…): si el elemento es de un proyecto oculto, se muestran todos.
+  if (query.pole || query.sel || query.tower) {
+    const find = () => (query.tower ? towerById().get(Number(query.tower)) : query.pole ? poleById().get(Number(query.pole)) : elById().get(Number(query.sel)));
     if (!find() && shown.length < allIds.length) { shown = allIds; renderProjList(); await reload(); }
     const it = find();
-    if (it && query.pole) { map.setView([it.lat, it.lng], 19); selectPole(it.id); }
+    if (it && query.tower) { map.setView([it.lat, it.lng], 17); selectTower(it.id); }
+    else if (it && query.pole) { map.setView([it.lat, it.lng], 19); selectPole(it.id); }
     else if (it) selectEl(it.id);
   }
 }

@@ -41,10 +41,11 @@ export async function antennaForm(antenna = null, nodeId = null) {
 export const STRUCTURES = [['', '—'], ['Autosoportada', 'Torre autosoportada'], ['Venteada', 'Torre venteada (con retenidas)'], ['Monopolo', 'Monopolo'], ['Mástil', 'Mástil / poste'], ['Azotea', 'Azotea / edificio'], ['Otro', 'Otro']];
 
 /** Alta / edición de una torre (es un nodo de tipo «torre» con altura y estructura). */
-export async function towerForm(node = null) {
+/** `opts.values`: valores iniciales de una torre nueva (p. ej. coordenadas); `opts.target`: proyecto donde crearla. */
+export async function towerForm(node = null, opts = {}) {
   const v = await formModal({
     title: node ? `Editar torre · ${node.name}` : 'Nueva torre', wide: true,
-    values: node || { status: 'operativo', structure: 'Autosoportada' },
+    values: node || { status: 'operativo', structure: 'Autosoportada', ...opts.values },
     fields: [
       { name: 'name', label: 'Nombre de la torre', required: true, maxlength: 80 },
       { name: 'code', label: 'Código', required: true, maxlength: 30, placeholder: 'TORRE-01' },
@@ -60,7 +61,7 @@ export async function towerForm(node = null) {
   });
   if (!v) return null;
   v.type = 'torre';
-  return guard(() => (node ? api.patch(`/api/nodes/${node.id}`, v) : api.post('/api/nodes', v)));
+  return guard(() => (node ? api.patch(`/api/nodes/${node.id}`, v) : api.post('/api/nodes', v, opts.target ? { target: opts.target } : undefined)));
 }
 
 export async function radiolinkForm(link = null) {

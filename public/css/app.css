@@ -241,6 +241,10 @@ table.t tbody tr { cursor: pointer; } table.t tbody tr:hover { background: #1523
 .tool-ctl h5 { margin: 8px 4px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .tool-ctl .btn { justify-content: flex-start; } .tool-ctl label { display: flex; gap: 8px; align-items: center; padding: 2px 4px; font-size: 13px; cursor: pointer; }
 .tool-ctl .btn.on { background: #0e7490; border-color: #22d3ee; }
+.tool-ctl { overflow-x: hidden; } .tool-ctl > *, .tool-ctl .tool-sec > * { min-width: 0; }
+.tool-ctl .tool-sec { display: grid; gap: 4px; }
+.tool-ctl .chips { gap: 4px; } .tool-ctl .chip-tab { flex: 1; padding: 4px 8px; }
+.emark.tower { width: 28px; height: 28px; border-radius: 50% 50% 6px 6px; border-color: var(--st, #0a1322); font-size: 13px; }
 .tool-ctl .proj-pick { display: grid; gap: 2px; max-height: 170px; overflow: auto; }
 .tool-ctl .proj-pick .row { margin-bottom: 4px; } .tool-ctl .proj-pick .btn { flex: 1; justify-content: center; padding: 4px 6px; }
 .tool-ctl .dotc { flex: none; } .tool-ctl .pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
